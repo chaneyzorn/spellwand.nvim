@@ -1,0 +1,19 @@
+{
+  "runtime": {
+    "version": "LuaJIT"
+  },
+  "diagnostics": {
+    "globals": ["vim"],
+    "libraryFiles": "Disable"
+  },
+  "workspace": {
+    "checkThirdParty": false,
+    "ignoreDir": [".dependencies"],
+    "library": [
+      "$VIMRUNTIME",
+      "/usr/share/nvim/runtime",
+      "${3rd}/luv/library",
+      "${3rd}/busted/library"
+    ]
+  }
+}
