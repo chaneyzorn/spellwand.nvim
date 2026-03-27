@@ -6,7 +6,7 @@ local ms = vim.lsp.protocol.Methods
 ---@type spellwand.Config
 M.default_config = {
   max_file_size = 10000,
-  method = "ts",
+  strategy = "treesitter",
   severity = {
     spellbad = vim.diagnostic.severity.WARN,
     spellcap = vim.diagnostic.severity.HINT,

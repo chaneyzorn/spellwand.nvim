@@ -170,8 +170,8 @@ function M.get_spelling_errors(bufnr, opts)
     end
   end
 
-  -- Use treesitter method by default, fallback to iter if ts returns nil
-  if opts.method == "ts" or opts.method == nil then
+  -- Use treesitter strategy by default, fallback to full if treesitter returns nil
+  if opts.strategy == "treesitter" or opts.strategy == nil then
     local ts_errors = M.get_spelling_errors_ts(bufnr)
     if ts_errors ~= nil then
       return ts_errors

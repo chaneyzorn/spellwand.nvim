@@ -4,16 +4,11 @@
 
 ---Spellwand LSP configuration options (settings.spellwand namespace)
 ---@class spellwand.Config
----Maximum file size to check in lines (nil for no limit)
----@field max_file_size integer|nil
----Spell checking method: "ts" (treesitter) or "iter" (buffer scan)
----@field method "ts"|"iter"
----Severity levels for different error types
----@field severity table<string, integer>
----Show suggestions in diagnostic message
----@field suggest boolean
----Number of suggestions in code actions
----@field num_suggestions integer
+---@field max_file_size integer|nil Maximum file size to check in lines (nil for no limit)
+---@field strategy "treesitter"|"full" Spell checking strategy: "treesitter" or "full"
+---@field severity table<string, integer> Severity levels for different error types
+---@field suggest boolean Show suggestions in diagnostic message
+---@field num_suggestions integer Number of suggestions in code actions
 
 ---Spelling error data structure
 ---@class spellwand.SpellingError

@@ -25,7 +25,7 @@
 --- ## Available Options (settings.spellwand):
 ---
 --- - `max_file_size`: Maximum file size in lines (default: 10000)
---- - `method`: Spell checking method - "ts" (treesitter) or "iter" (default: "ts")
+--- - `strategy`: Spell checking strategy - "treesitter" or "full" (default: "treesitter")
 --- - `severity`: Severity levels for different error types
 --- - `suggest`: Show suggestions in diagnostic message (default: false)
 --- - `num_suggestions`: Number of suggestions in code actions (default: 3)
@@ -40,7 +40,6 @@ return {
     -- In-process LSP: create RPC interface that dispatches directly to handlers
     return lsp.create_rpc(dispatchers)
   end,
-  filetypes = nil,
   -- Settings are sent to server via workspace/didChangeConfiguration
   settings = {
     spellwand = vim.deepcopy(lsp.default_config),

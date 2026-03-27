@@ -106,8 +106,8 @@ vim.lsp.config("spellwand", {
       -- Maximum file size to check in lines (nil for no limit)
       max_file_size = 10000,
 
-      -- Spell checking method: "ts" (treesitter) or "iter" (buffer scan)
-      method = "ts",
+      -- Spell checking strategy: "treesitter" or "full"
+      strategy = "treesitter",
 
       -- Severity levels for different error types
       severity = {
@@ -138,7 +138,7 @@ spellwand reads Neovim's `spellfile` option to determine where to add words. Con
 vim.opt.spellfile = vim.fn.expand("~/.config/nvim/spell/en.utf-8.add")
 
 -- Multiple spellfiles (global + project local)
-vim.opt.spellfile = vim.fn.expand("~/.config/nvim/spell/en.utf-8.add") .. 
+vim.opt.spellfile = vim.fn.expand("~/.config/nvim/spell/en.utf-8.add") ..
                       ",.spell/en.utf-8.add"
 ```
 
@@ -173,7 +173,8 @@ spellwand displays spellfile names in code actions based on path patterns:
 - Others → shown by filename
 
 Example with multiple spellfiles:
-```
+
+```text
 Add 'neovim' to global spellfile    → ~/.config/nvim/spell/en.utf-8.add
 Add 'neovim' to local spellfile     → ./.spell/en.utf-8.add
 ```
@@ -229,7 +230,7 @@ Available actions:
 
 spellwand.nvim implements a pure LSP protocol flow:
 
-```
+```text
 ┌─────────────┐     textDocument/didOpen      ┌─────────────┐
 │   Neovim    │ ─────────────────────────────→│  spellwand  │
 │   (Client)  │                               │   (Server)  │
