@@ -8,12 +8,12 @@ M.default_config = {
   max_file_size = 10000,
   strategy = "treesitter",
   severity = {
-    spellbad = vim.diagnostic.severity.WARN,
-    spellcap = vim.diagnostic.severity.HINT,
-    spelllocal = vim.diagnostic.severity.HINT,
-    spellrare = vim.diagnostic.severity.INFO,
+    SpellBad = vim.diagnostic.severity.WARN,
+    SpellCap = vim.diagnostic.severity.HINT,
+    SpellLocal = vim.diagnostic.severity.HINT,
+    SpellRare = vim.diagnostic.severity.INFO,
   },
-  suggest = false,
+  suggest_in_diagnostics = false,
   num_suggestions = 3,
 }
 
@@ -99,7 +99,7 @@ local function get_diagnostics(bufnr)
     local severity = M.config.severity[err.type]
     if severity then
       local message = err.word
-      if M.config.suggest and M.config.num_suggestions > 0 then
+      if M.config.suggest_in_diagnostics and M.config.num_suggestions > 0 then
         local suggestions = vim.fn.spellsuggest(err.word, M.config.num_suggestions)
         if #suggestions > 0 then
           message = message .. " (suggestions: " .. table.concat(suggestions, ", ") .. ")"

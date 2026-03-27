@@ -1,29 +1,23 @@
 local M = {}
 
----Get the error type for a word
----@param word string
----@param bufnr integer
----@return string
-function M.get_error_type(word, bufnr)
-  return vim.api.nvim_buf_call(bufnr, function()
-    local check = vim.spell.check(word)
-    -- If the word "is" spelled correctly, but is being flagged, it's a capitalization error
-    return "spell" .. ((check[1] and check[1][2]) or "cap")
-  end)
-end
+---Error type mapping from vim.spell.check() codes to LSP error types
+---@type table<string, string>
+local ERROR_TYPES = {
+  bad = "SpellBad",
+  cap = "SpellCap",
+  ["local"] = "SpellLocal",
+  rare = "SpellRare",
+}
 
 ---Get spelling errors using Treesitter @spell captures
 ---@param bufnr integer
 ---@return spellwand.SpellingError[]|nil Returns nil if treesitter is not available
-function M.get_spelling_errors_ts(bufnr)
+function M.get_spelling_errors_treesitter(bufnr)
   -- Get the treesitter parser for the buffer
   local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
   if not ok or not parser then
     return nil
   end
-
-  local errors = {}
-  local seen = {}
 
   -- Parse the buffer and get all trees (for injections)
   local trees = parser:parse()
@@ -31,11 +25,8 @@ function M.get_spelling_errors_ts(bufnr)
     return nil
   end
 
-  -- Get the language for this parser
-  local lang = parser:lang()
-
   -- Get the highlight query which contains @spell captures
-  local query = vim.treesitter.query.get(lang, "highlights")
+  local query = vim.treesitter.query.get(parser:lang(), "highlights")
   if not query then
     return nil
   end
@@ -52,6 +43,8 @@ function M.get_spelling_errors_ts(bufnr)
     return nil
   end
 
+  local errors = {}
+  local seen = {}
   -- Process each tree (handles injected languages)
   for _, tree in ipairs(trees) do
     local root = tree:root()
@@ -67,7 +60,7 @@ function M.get_spelling_errors_ts(bufnr)
           local line_errors = vim.spell.check(text)
           for _, err in ipairs(line_errors) do
             local word = err[1]
-            local err_type = "spell" .. err[2]
+            local err_code = err[2]
             local col_offset = err[3]
 
             -- Calculate absolute position
@@ -81,7 +74,7 @@ function M.get_spelling_errors_ts(bufnr)
                 word = word,
                 lnum = abs_lnum,
                 col = abs_col,
-                type = err_type,
+                type = ERROR_TYPES[err_code] or ("Spell" .. err_code:gsub("^%l", string.upper)),
               })
             end
           end
@@ -93,14 +86,14 @@ function M.get_spelling_errors_ts(bufnr)
   return errors
 end
 
----Get spelling errors by iterating through buffer content
+---Get spelling errors by iterating through buffer content (full buffer scan)
 ---@param bufnr integer
 ---@param start_row integer|nil 0-indexed
 ---@param start_col integer|nil 0-indexed
 ---@param end_row integer|nil 0-indexed
 ---@param end_col integer|nil 0-indexed
 ---@return spellwand.SpellingError[]
-function M.get_spelling_errors_iter(bufnr, start_row, start_col, end_row, end_col)
+function M.get_spelling_errors_full(bufnr, start_row, start_col, end_row, end_col)
   start_row = start_row or 0
   start_col = start_col or 0
 
@@ -129,7 +122,7 @@ function M.get_spelling_errors_iter(bufnr, start_row, start_col, end_row, end_co
     local line_errors = vim.spell.check(line)
     for _, err in ipairs(line_errors) do
       local word = err[1]
-      local err_type = "spell" .. err[2]
+      local err_code = err[2]
       local col = err[3]
 
       -- Calculate absolute position
@@ -143,7 +136,7 @@ function M.get_spelling_errors_iter(bufnr, start_row, start_col, end_row, end_co
           word = word,
           lnum = abs_lnum,
           col = abs_col,
-          type = err_type,
+          type = ERROR_TYPES[err_code] or ("Spell" .. err_code:gsub("^%l", string.upper)),
         })
       end
     end
@@ -172,12 +165,12 @@ function M.get_spelling_errors(bufnr, opts)
 
   -- Use treesitter strategy by default, fallback to full if treesitter returns nil
   if opts.strategy == "treesitter" or opts.strategy == nil then
-    local ts_errors = M.get_spelling_errors_ts(bufnr)
+    local ts_errors = M.get_spelling_errors_treesitter(bufnr)
     if ts_errors ~= nil then
       return ts_errors
     end
   end
-  return M.get_spelling_errors_iter(bufnr)
+  return M.get_spelling_errors_full(bufnr)
 end
 
 return M

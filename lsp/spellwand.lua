@@ -27,7 +27,7 @@
 --- - `max_file_size`: Maximum file size in lines (default: 10000)
 --- - `strategy`: Spell checking strategy - "treesitter" or "full" (default: "treesitter")
 --- - `severity`: Severity levels for different error types
---- - `suggest`: Show suggestions in diagnostic message (default: false)
+--- - `suggest_in_diagnostics`: Show suggestions in diagnostic message (default: false)
 --- - `num_suggestions`: Number of suggestions in code actions (default: 3)
 ---
 --- See README.md for spellfile configuration details.

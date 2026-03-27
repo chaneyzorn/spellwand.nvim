@@ -118,7 +118,7 @@ vim.lsp.config("spellwand", {
       },
 
       -- Show suggestions in diagnostic message
-      suggest = false,
+      suggest_in_diagnostics = false,
 
       -- Number of suggestions in code actions
       num_suggestions = 3,
