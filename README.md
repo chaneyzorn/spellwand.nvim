@@ -7,7 +7,7 @@ An in-process LSP server for Neovim that provides spell checking diagnostics and
 - 🎯 **In-process LSP server** - No external dependencies, runs within Neovim
 - 🔗 **Native LSP integration** - Works with `vim.lsp.buf.code_action()`, telescope, trouble.nvim, etc.
 - 🌳 **Treesitter-aware** - Uses `@spell` captures for context-aware checking
-- 📁 **Local spellfile support** - Project-specific dictionaries in `.spell/` directory
+- 📁 **Spellfile support** - Works with Neovim's `spellfile` option for multiple dictionaries
 - ⚡ **Fast & lightweight** - Direct access to Neovim's spell state, no RPC overhead
 - 🎨 **LSP Native** - Uses standard LSP protocol: `textDocument/didChange` → `textDocument/publishDiagnostics`
 
@@ -51,7 +51,7 @@ An in-process LSP server for Neovim that provides spell checking diagnostics and
 5. Use code actions to fix:
    - `<leader>ca` or `:lua vim.lsp.buf.code_action()` to see suggestions
    - Or use native `z=` to fix spelling
-   - Use `zg` to add to dictionary (respects local spellfile)
+   - Use `zg` to add to dictionary
 
 ## Configuration
 
@@ -61,12 +61,14 @@ spellwand uses the standard Neovim 0.11+ LSP configuration API:
 -- Default configuration (no setup needed)
 vim.lsp.enable("spellwand")
 
--- Custom configuration via init_options
+-- Custom configuration via settings
 vim.lsp.config("spellwand", {
   filetypes = { "markdown", "text", "gitcommit" },
-  init_options = {
-    suggest = true,
-    num_suggestions = 5,
+  settings = {
+    spellwand = {
+      suggest = true,
+      num_suggestions = 5,
+    }
   }
 })
 vim.lsp.enable("spellwand")
@@ -78,8 +80,10 @@ Or create a config file at `lsp/spellwand.lua` in your config directory:
 -- ~/.config/nvim/lsp/spellwand.lua
 return {
   filetypes = { "markdown", "text", "gitcommit" },
-  init_options = {
-    suggest = true,
+  settings = {
+    spellwand = {
+      suggest = true,
+    }
   }
 }
 ```
@@ -92,36 +96,86 @@ vim.lsp.enable("spellwand")
 
 ### Available Options
 
-All options are passed via `init_options`:
+All server options are passed via `settings.spellwand`:
 
 ```lua
 vim.lsp.config("spellwand", {
   filetypes = nil,  -- Filetypes to attach to (nil = all filetypes)
-  init_options = {
-    -- Maximum file size to check in lines (nil for no limit)
-    max_file_size = 10000,
+  settings = {
+    spellwand = {
+      -- Maximum file size to check in lines (nil for no limit)
+      max_file_size = 10000,
 
-    -- Spell checking method: "ts" (treesitter) or "iter" (buffer scan)
-    method = "ts",
+      -- Spell checking method: "ts" (treesitter) or "iter" (buffer scan)
+      method = "ts",
 
-    -- Severity levels for different error types
-    severity = {
-      spellbad = vim.diagnostic.severity.WARN,
-      spellcap = vim.diagnostic.severity.HINT,
-      spelllocal = vim.diagnostic.severity.HINT,
-      spellrare = vim.diagnostic.severity.INFO,
-    },
+      -- Severity levels for different error types
+      severity = {
+        spellbad = vim.diagnostic.severity.WARN,
+        spellcap = vim.diagnostic.severity.HINT,
+        spelllocal = vim.diagnostic.severity.HINT,
+        spellrare = vim.diagnostic.severity.INFO,
+      },
 
-    -- Show suggestions in diagnostic message
-    suggest = false,
+      -- Show suggestions in diagnostic message
+      suggest = false,
 
-    -- Number of suggestions in code actions
-    num_suggestions = 3,
-
-    -- Markers to find project root for local spellfile
-    root_markers = { ".git", ".spell" },
+      -- Number of suggestions in code actions
+      num_suggestions = 3,
+    }
   }
 })
+```
+
+## Spellfile Configuration
+
+spellwand reads Neovim's `spellfile` option to determine where to add words. Configure this option to control which spellfiles are used.
+
+### Basic Setup
+
+```lua
+-- Single global spellfile
+vim.opt.spellfile = vim.fn.expand("~/.config/nvim/spell/en.utf-8.add")
+
+-- Multiple spellfiles (global + project local)
+vim.opt.spellfile = vim.fn.expand("~/.config/nvim/spell/en.utf-8.add") .. 
+                      ",.spell/en.utf-8.add"
+```
+
+### Project-Specific Spellfiles
+
+Use `.nvim.lua` (project-local config) or autocmds to set up per-project spellfiles:
+
+```lua
+-- ~/.config/nvim/init.lua
+vim.api.nvim_create_autocmd("BufRead", {
+  pattern = vim.fn.expand("~/projects/my-project/**/*"),
+  callback = function()
+    -- Use project-local spellfile
+    vim.bo.spellfile = vim.fn.expand("~/projects/my-project/.spell/en.utf-8.add")
+  end,
+})
+```
+
+Or create `.nvim.lua` in your project root:
+
+```lua
+-- ~/projects/my-project/.nvim.lua
+vim.bo.spellfile = vim.fn.getcwd() .. "/.spell/en.utf-8.add"
+```
+
+### Code Action Display Names
+
+spellwand displays spellfile names in code actions based on path patterns:
+
+- Files in `.spell/` directory → shown as **"local"**
+- First spellfile in list → shown as **"global"**
+- Others → shown by filename
+
+Example with multiple spellfiles:
+```
+Add 'neovim' to global spellfile    → ~/.config/nvim/spell/en.utf-8.add
+Add 'neovim' to local spellfile     → ./.spell/en.utf-8.add
 ```
 
 ## Usage
@@ -148,8 +202,8 @@ spellwand.nvim works with native spell keybindings:
 - `]s` - Next spelling error
 - `[s` - Previous spelling error
 - `z=` - Suggestions for word under cursor
-- `zg` - Add word to dictionary (global)
-- `2zg` - Add word to local dictionary (if `.spell/` exists)
+- `zg` - Add word to dictionary (uses first spellfile)
+- `2zg` - Add word to second spellfile (if configured)
 - `zw` - Mark word as wrong
 
 ### Code Actions
@@ -168,30 +222,8 @@ vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, { desc = "Code Action
 
 Available actions:
 
-- Add word to **local** spellfile (if `.spell/` directory exists)
-- Add word to **global** spellfile
+- Add word to each configured spellfile (with appropriate display name)
 - Change to one of the suggestions
-
-### Local Spellfile (Project Dictionary)
-
-Create a `.spell/` directory in your project root to enable project-specific dictionaries:
-
-```bash
-mkdir .spell
-```
-
-spellwand.nvim will automatically create and use `.spell/en.utf-8.add` for words added via code actions or `2zg`.
-
-Example structure:
-
-```text
-my-project/
-├── .git/
-├── .spell/
-│   └── en.utf-8.add    # Project-specific words
-├── README.md
-└── ...
-```
 
 ## How It Works
 
@@ -223,16 +255,16 @@ spellwand.nvim implements a pure LSP protocol flow:
 2. Check if spellwand is attached: `:checkhealth vim.lsp`
 3. Check if filetype is configured: Set `filetypes` in vim.lsp.config()
 
-### Local spellfile not working
+### Spellfile not working
 
-1. Ensure `.spell/` directory exists in project root
-2. Check root markers in your config
-3. Verify spellfile option: `:echo &spellfile`
+1. Check spellfile option: `:echo &spellfile`
+2. Verify spellfile paths exist (create if needed)
+3. Check file permissions
 
 ### Too many diagnostics
 
 1. Set `max_file_size` to skip large files
-2. Disable for specific filetypes in `ft_config`
+2. Disable for specific filetypes using `filetypes` option
 
 ## Credits
 

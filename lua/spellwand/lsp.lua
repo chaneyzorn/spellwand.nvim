@@ -21,10 +21,6 @@ M.default_config = {
 ---@type spellwand.Config
 M.config = vim.deepcopy(M.default_config)
 
----Workspace root URI (set during initialize, used for spellfile resolution)
----@type string|nil
-M.root_uri = nil
-
 ---Parse spellfile option to get list of spellfile paths
 ---@param bufnr integer
 ---@return string[] List of spellfile paths (may be empty)
@@ -61,52 +57,6 @@ local commands = {
     vim.api.nvim_feedkeys(index .. "z=", "n", false)
   end,
 }
-
----Resolve project-local spellfile for a file
----Uses the workspace root from LSP protocol
----@param fname string
----@param root_uri string|nil Workspace root URI
----@return string|nil
-local function resolve_project_spellfile(fname, root_uri)
-  if not root_uri then
-    return nil
-  end
-
-  local root = vim.uri_to_fname(root_uri)
-  local spell_dir = vim.fs.joinpath(root, ".spell")
-  local stat = vim.uv.fs_stat(spell_dir)
-  if not stat or stat.type ~= "directory" then
-    return nil
-  end
-
-  local path = vim.fs.joinpath(spell_dir, "en.utf-8.add")
-  if not vim.uv.fs_stat(path) then
-    vim.fn.writefile({}, path)
-  end
-  return path
-end
-
----Setup spellfile for buffer (append project-local if exists)
----@param bufnr integer
----@param root_uri string|nil
-local function setup_spellfile(bufnr, root_uri)
-  local fname = vim.api.nvim_buf_get_name(bufnr)
-  if fname == "" then
-    return
-  end
-
-  local local_spellfile = resolve_project_spellfile(fname, root_uri)
-  if not local_spellfile then
-    return
-  end
-
-  local current_spellfile = vim.bo[bufnr].spellfile
-  if current_spellfile == "" then
-    vim.bo[bufnr].spellfile = local_spellfile
-  elseif not current_spellfile:find(local_spellfile, 1, true) then
-    vim.bo[bufnr].spellfile = current_spellfile .. "," .. local_spellfile
-  end
-end
 
 ---Get LSP server capabilities
 ---@return lsp.ServerCapabilities
@@ -198,9 +148,6 @@ M.handlers = {
       M.config = vim.tbl_deep_extend("force", M.default_config, init_settings.spellwand)
     end
 
-    -- Store workspace root for spellfile resolution
-    M.root_uri = params.rootUri
-
     return {
       capabilities = get_capabilities(),
       serverInfo = {
@@ -217,7 +164,6 @@ M.handlers = {
   [ms.shutdown] = function(_, _, _, _)
     -- Reset to defaults on shutdown
     M.config = vim.deepcopy(M.default_config)
-    M.root_uri = nil
     return nil
   end,
 
@@ -228,7 +174,6 @@ M.handlers = {
       return
     end
 
-    setup_spellfile(bufnr, M.root_uri)
     publish_diagnostics(client, bufnr)
   end,
 
