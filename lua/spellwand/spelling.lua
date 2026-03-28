@@ -1,5 +1,7 @@
 local M = {}
 
+local log = require("vim.lsp.log")
+
 ---Error type mapping from vim.spell.check() codes to LSP error types
 ---@type table<string, string>
 local ERROR_TYPES = {
@@ -13,11 +15,15 @@ local ERROR_TYPES = {
 ---@param bufnr integer
 ---@return spellwand.SpellingError[]|nil Returns nil if treesitter is not available
 function M.get_spelling_errors_treesitter(bufnr)
+  log.debug("[spellwand.spelling.treesitter] called for bufnr=" .. bufnr)
+
   -- Get the treesitter parser for the buffer
   local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
   if not ok or not parser then
+    log.debug("[spellwand.spelling.treesitter] parser not available: " .. tostring(parser))
     return nil
   end
+  log.debug("[spellwand.spelling.treesitter] parser for lang=" .. parser:lang())
 
   -- Parse the buffer and get all trees (for injections)
   local trees = parser:parse()
@@ -40,11 +46,14 @@ function M.get_spelling_errors_treesitter(bufnr)
     end
   end
   if not has_spell_capture then
+    log.debug("[spellwand.spelling.treesitter] no @spell capture in highlights query")
     return nil
   end
+  log.debug("[spellwand.spelling.treesitter] has @spell capture in query")
 
   local errors = {}
   local seen = {}
+
   -- Process each tree (handles injected languages)
   for _, tree in ipairs(trees) do
     local root = tree:root()
@@ -83,6 +92,7 @@ function M.get_spelling_errors_treesitter(bufnr)
     end
   end
 
+  log.debug("[spellwand.spelling.treesitter] found " .. #errors .. " total errors")
   return errors
 end
 
@@ -151,26 +161,36 @@ end
 ---@param opts spellwand.Config
 ---@return spellwand.SpellingError[]
 function M.get_spelling_errors(bufnr, opts)
-  if not vim.wo.spell then
-    return {}
-  end
+  log.debug("[spellwand.spelling.get] called for bufnr=" .. bufnr .. ", strategy=" .. tostring(opts.strategy))
+
+  -- Log spell status for debugging (do not block)
+  log.debug("[spellwand.spelling.get] vim.wo.spell=" .. tostring(vim.wo.spell))
 
   -- Check max file size
   if opts.max_file_size then
     local line_count = vim.api.nvim_buf_line_count(bufnr)
+    log.debug("[spellwand.spelling.get] line_count=" .. line_count .. ", max_file_size=" .. tostring(opts.max_file_size))
     if line_count > opts.max_file_size then
+      log.debug("[spellwand.spelling.get] File too large, returning empty")
       return {}
     end
   end
 
   -- Use treesitter strategy by default, fallback to full if treesitter returns nil
   if opts.strategy == "treesitter" or opts.strategy == nil then
+    log.debug("[spellwand.spelling.get] trying treesitter")
     local ts_errors = M.get_spelling_errors_treesitter(bufnr)
     if ts_errors ~= nil then
+      log.debug("[spellwand.spelling.get] treesitter success with " .. #ts_errors .. " errors")
       return ts_errors
     end
+    log.debug("[spellwand.spelling.get] treesitter failed, falling back to full scan")
+  else
+    log.debug("[spellwand.spelling.get] using full scan")
   end
-  return M.get_spelling_errors_full(bufnr)
+  local full_errors = M.get_spelling_errors_full(bufnr)
+  log.debug("[spellwand.spelling.full] found " .. #full_errors .. " errors")
+  return full_errors
 end
 
 return M
