@@ -111,10 +111,10 @@ vim.lsp.config("spellwand", {
 
       -- Severity levels for different error types
       severity = {
-        spellbad = vim.diagnostic.severity.WARN,
-        spellcap = vim.diagnostic.severity.HINT,
-        spelllocal = vim.diagnostic.severity.HINT,
-        spellrare = vim.diagnostic.severity.INFO,
+        SpellBad = vim.diagnostic.severity.WARN,
+        SpellCap = vim.diagnostic.severity.HINT,
+        SpellLocal = vim.diagnostic.severity.HINT,
+        SpellRare = vim.diagnostic.severity.INFO,
       },
 
       -- Show suggestions in diagnostic message

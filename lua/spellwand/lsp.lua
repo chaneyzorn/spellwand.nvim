@@ -283,7 +283,7 @@ M.handlers = {
 }
 
 ---Create in-process LSP RPC interface
----Implements vim.lsp.rpc.PublicClient for use as cmd function
+---Implements vim.lsp.rpc.PublicClient for use as vim.lsp.Config.cmd function
 ---@param dispatchers vim.lsp.rpc.Dispatchers Dispatchers for server->client messages
 ---@return vim.lsp.rpc.PublicClient RPC client interface
 function M.create_rpc(dispatchers)

@@ -1,5 +1,3 @@
----@brief
----
 --- In-process LSP server for spell checking, leveraging Neovim's built-in
 --- spell check capabilities to provide diagnostics and code actions.
 ---
@@ -29,8 +27,6 @@
 --- - `severity`: Severity levels for different error types
 --- - `suggest_in_diagnostics`: Show suggestions in diagnostic message (default: false)
 --- - `num_suggestions`: Number of suggestions in code actions (default: 3)
----
---- See README.md for spellfile configuration details.
 
 local lsp = require("spellwand.lsp")
 
