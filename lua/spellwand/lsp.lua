@@ -3,13 +3,9 @@ local M = {}
 local ms = vim.lsp.protocol.Methods
 local log = require("vim.lsp.log")
 
----Dispatchers for sending messages to client (set by create_rpc)
----@type vim.lsp.rpc.Dispatchers|nil
-local dispatchers = nil
-
----Default configuration values (spellwand-specific settings only)
+---Default configuration values
 ---@type spellwand.Config
-M.default_config = {
+local default_config = {
   max_file_size = 10000,
   strategy = "treesitter",
   severity = {
@@ -21,10 +17,6 @@ M.default_config = {
   suggest_in_diagnostics = false,
   num_suggestions = 3,
 }
-
----Global server configuration (single instance, all clients share)
----@type spellwand.Config
-M.config = vim.deepcopy(M.default_config)
 
 ---Parse spellfile option to get list of spellfile paths
 ---@param bufnr integer
@@ -51,29 +43,43 @@ local function get_spellfile_display_name(path, index)
   return vim.fn.fnamemodify(path, ":t:r")
 end
 
----Built-in commands for code actions
----@type table<string, fun(spellfile_index: integer, ...): any>
-local commands = {
-  ["spellwand.addToSpellfile"] = function(spellfile_index, word)
-    vim.cmd(spellfile_index .. "spellgood " .. word)
-  end,
+---@class spellwand.Client
+---@field private _dispatchers vim.lsp.rpc.Dispatchers Dispatchers for server→client communication
+---@field config spellwand.Config Client-specific configuration
+---@field private _commands table<string, fun(...): any> Built-in commands for code actions
+local Client = {}
+Client.__index = Client
 
-  ["spellwand.fix"] = function(_, index)
-    vim.api.nvim_feedkeys(index .. "z=", "n", false)
-  end,
-}
+---Create a new spellwand Client instance
+---@param dispatchers vim.lsp.rpc.Dispatchers Dispatchers provided by Neovim
+---@param config spellwand.Config? Initial configuration
+---@return spellwand.Client
+function Client.new(dispatchers, config)
+  local self = setmetatable({}, Client)
+  self._dispatchers = dispatchers
+  self.config = vim.deepcopy(config or default_config)
+  self._commands = {
+    ["spellwand.addToSpellfile"] = function(spellfile_index, word)
+      vim.cmd(spellfile_index .. "spellgood " .. word)
+    end,
+    ["spellwand.fixTypo"] = function(_, index)
+      vim.api.nvim_feedkeys(index .. "z=", "n", false)
+    end,
+  }
+  return self
+end
 
----Get LSP server capabilities
+---Get server capabilities
 ---@return lsp.ServerCapabilities
-local function get_capabilities()
+function Client:_get_capabilities()
   return {
     textDocumentSync = {
       openClose = true,
-      change = vim.lsp.protocol.TextDocumentSyncKind.None, -- We read buffer directly
+      change = vim.lsp.protocol.TextDocumentSyncKind.None,
     },
     codeActionProvider = true,
     executeCommandProvider = {
-      commands = vim.tbl_keys(commands),
+      commands = vim.tbl_keys(self._commands),
     },
     workspace = {
       workspaceFolders = true,
@@ -85,30 +91,25 @@ end
 ---Get spelling errors and convert to LSP diagnostics
 ---@param bufnr integer
 ---@return lsp.Diagnostic[]
-local function get_diagnostics(bufnr)
-  log.debug("[spellwand.diagnostics.get] called for bufnr=" .. bufnr)
+function Client:_get_diagnostics(bufnr)
+  log.debug("[spellwand.client.get_diagnostics] bufnr=" .. bufnr)
 
-  if M.config.max_file_size then
+  if self.config.max_file_size then
     local line_count = vim.api.nvim_buf_line_count(bufnr)
-    log.debug("[spellwand.diagnostics.get] line_count=" .. line_count .. ", max_file_size=" .. tostring(M.config.max_file_size))
-    if line_count > M.config.max_file_size then
-      log.debug("[spellwand.diagnostics.get] File too large, skipping spell check")
+    if line_count > self.config.max_file_size then
       return {}
     end
   end
-  -- Log spell status for debugging (do not block)
-  log.debug("[spellwand.diagnostics.get] vim.wo.spell=" .. tostring(vim.wo.spell))
 
-  local errors = require("spellwand.spelling").get_spelling_errors(bufnr, M.config)
-  log.debug("[spellwand.diagnostics.get] Found " .. #errors .. " spelling errors")
+  local errors = require("spellwand.spelling").get_spelling_errors(bufnr, self.config)
 
   local diagnostics = {}
   for _, err in ipairs(errors) do
-    local severity = M.config.severity[err.type]
+    local severity = self.config.severity[err.type]
     if severity then
       local message = err.word
-      if M.config.suggest_in_diagnostics and M.config.num_suggestions > 0 then
-        local suggestions = vim.fn.spellsuggest(err.word, M.config.num_suggestions)
+      if self.config.suggest_in_diagnostics and self.config.num_suggestions > 0 then
+        local suggestions = vim.fn.spellsuggest(err.word, self.config.num_suggestions)
         if #suggestions > 0 then
           message = message .. " (suggestions: " .. table.concat(suggestions, ", ") .. ")"
         end
@@ -130,266 +131,252 @@ local function get_diagnostics(bufnr)
   return diagnostics
 end
 
----Publish diagnostics for a buffer (server -> client)
----Uses dispatchers to send notification to the LSP client
+---Publish diagnostics for a buffer
+---Uses dispatchers.notification to trigger Neovim's standard diagnostic flow
 ---@param bufnr integer
-local function publish_diagnostics(bufnr)
-  log.debug("[spellwand.diagnostics.publish] called for bufnr=" .. bufnr)
-
+function Client:_publish_diagnostics(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
-    log.debug("[spellwand.diagnostics.publish] Buffer " .. bufnr .. " is not valid")
     return
   end
 
-  if not dispatchers then
-    log.error("[spellwand.diagnostics.publish] Dispatchers not available")
-    return
-  end
-
-  local diagnostics = get_diagnostics(bufnr)
-  log.debug("[spellwand.diagnostics.publish] Publishing " .. #diagnostics .. " diagnostics")
-
+  local diagnostics = self:_get_diagnostics(bufnr)
   local uri = vim.uri_from_bufnr(bufnr)
-  log.debug("[spellwand.diagnostics.publish] payload=" .. vim.inspect(diagnostics))
 
-  dispatchers.notification(ms.textDocument_publishDiagnostics, {
+  log.debug("[spellwand.client.publish] " .. uri .. " with " .. #diagnostics .. " diagnostics")
+
+  ---@diagnostic disable-next-line: param-type-mismatch
+  self._dispatchers.notification(ms.textDocument_publishDiagnostics, {
     uri = uri,
     diagnostics = diagnostics,
   })
-  log.debug("[spellwand.diagnostics.publish] success")
 end
 
----LSP method handlers
----Signature matches Neovim's handler format: (err, result, ctx, config)
-M.handlers = {
-  [ms.initialize] = function(err, params, ctx, _)
-    log.debug("[spellwand.handler.initialize] called")
+---Re-publish diagnostics for all attached buffers
+function Client:_refresh_all_diagnostics()
+  local clients = vim.lsp.get_clients({ name = "spellwand" })
+  for _, client in ipairs(clients) do
+    for bufnr, _ in pairs(client.attached_buffers or {}) do
+      if vim.api.nvim_buf_is_valid(bufnr) then
+        self:_publish_diagnostics(bufnr)
+      end
+    end
+  end
+end
 
-    -- Apply settings from initializationOptions
+---Handler for textDocument/codeAction
+---@param params lsp.CodeActionParams
+---@return lsp.CodeAction[]
+function Client:_handle_code_action(params)
+  log.debug("[spellwand.client.codeAction] called")
+  local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+  local actions = {}
+  local word = vim.fn.expand("<cword>")
+
+  if not word or word == "" then
+    return actions
+  end
+
+  local badword = vim.fn.spellbadword(word)
+  if badword[1] == "" then
+    return actions
+  end
+
+  local spellfiles = get_spellfiles(bufnr)
+  for idx, path in ipairs(spellfiles) do
+    local display_name = get_spellfile_display_name(path, idx)
+    table.insert(actions, {
+      title = string.format("Add '%s' to %s spellfile", word, display_name),
+      command = {
+        title = string.format("Add '%s' to %s spellfile", word, display_name),
+        command = "spellwand.addToSpellfile",
+        arguments = { idx, word },
+      },
+    })
+  end
+
+  if #spellfiles == 0 then
+    table.insert(actions, {
+      title = string.format("Add '%s' to spellfile (no spellfile configured)", word),
+      command = {
+        title = string.format("Add '%s' to spellfile", word),
+        command = "spellwand.addToSpellfile",
+        arguments = { 1, word },
+      },
+    })
+  end
+
+  local suggestions = vim.fn.spellsuggest(word, self.config.num_suggestions)
+  for idx, sug in ipairs(suggestions) do
+    table.insert(actions, {
+      title = string.format("Change '%s' to '%s'", word, sug),
+      command = {
+        title = string.format("Change '%s' to '%s'", word, sug),
+        command = "spellwand.fixTypo",
+        arguments = { 0, idx },
+      },
+    })
+  end
+
+  return actions
+end
+
+---Handler for workspace/executeCommand
+---@param params lsp.ExecuteCommandParams
+---@return lsp.ResponseError? error
+function Client:_handle_execute_command(params)
+  log.debug("[spellwand.client.executeCommand] called: " .. params.command)
+  local cmd_fn = self._commands[params.command]
+  if not cmd_fn then
+    return {
+      code = -32601,
+      message = "Unknown command: " .. params.command,
+    }
+  end
+
+  local ok, result = pcall(cmd_fn, unpack(params.arguments))
+  if not ok then
+    return {
+      code = -32603,
+      message = tostring(result),
+    }
+  end
+
+  return nil
+end
+
+---Request handlers table
+---@type table<vim.lsp.protocol.Method.ClientToServer.Request, fun(self: spellwand.Client, params: table): any, lsp.ResponseError?>
+Client._request_handlers = {
+  [ms.initialize] = function(self, params)
+    log.debug("[spellwand.client.initialize] called")
     local init_settings = params.initializationOptions and params.initializationOptions.settings
     if init_settings and init_settings.spellwand then
-      M.config = vim.tbl_deep_extend("force", M.default_config, init_settings.spellwand)
-      log.debug("[spellwand.handler.initialize] Applied settings: " .. vim.inspect(M.config))
+      self.config = vim.tbl_deep_extend("force", default_config, init_settings.spellwand)
     end
-
-    log.debug("[spellwand.handler.initialize] Server initialized with config: " .. vim.inspect(M.config))
-
     return {
-      capabilities = get_capabilities(),
+      capabilities = self:_get_capabilities(),
       serverInfo = {
         name = "spellwand",
         version = "0.1.0",
       },
-    }
+    }, nil
   end,
 
-  [ms.initialized] = function(_, _, _, _)
-    log.debug("[spellwand.handler.initialized] called")
-    -- Server is initialized, nothing to do
+  [ms.shutdown] = function(self, _params)
+    log.debug("[spellwand.client.shutdown] called")
+    self.config = vim.deepcopy(default_config)
+    return nil, nil
   end,
 
-  [ms.shutdown] = function(_, _, _, _)
-    log.debug("[spellwand.handler.shutdown] called")
-    -- Reset to defaults on shutdown
-    M.config = vim.deepcopy(M.default_config)
-    return nil
+  [ms.textDocument_codeAction] = function(self, params)
+    return self:_handle_code_action(params), nil
   end,
 
-  [ms.textDocument_didOpen] = function(err, params, ctx, _)
-    log.debug("[spellwand.handler.textDocument.didOpen] called for uri=" .. params.textDocument.uri)
-    local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-    publish_diagnostics(bufnr)
-  end,
-
-  [ms.textDocument_didChange] = function(err, params, ctx, _)
-    log.debug("[spellwand.handler.textDocument.didChange] called for uri=" .. params.textDocument.uri)
-    local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-    publish_diagnostics(bufnr)
-  end,
-
-  [ms.textDocument_didClose] = function(err, params, ctx, _)
-    log.debug("[spellwand.handler.textDocument.didClose] called")
-    -- Client automatically clears diagnostics on buffer close
-  end,
-
-  [ms.textDocument_codeAction] = function(err, params, ctx, _)
-    log.debug("[spellwand.handler.textDocument.codeAction] called")
-    local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-    local actions = {}
-    local word = vim.fn.expand("<cword>")
-    log.debug("[spellwand.handler.textDocument.codeAction] word=: '" .. tostring(word) .. "'")
-
-    if not word or word == "" then
-      return actions
-    end
-
-    local badword = vim.fn.spellbadword(word)
-    if badword[1] == "" then
-      return actions
-    end
-
-    local spellfiles = get_spellfiles(bufnr)
-    for idx, path in ipairs(spellfiles) do
-      local display_name = get_spellfile_display_name(path, idx)
-      table.insert(actions, {
-        title = string.format("Add '%s' to %s spellfile", word, display_name),
-        command = {
-          title = string.format("Add '%s' to %s spellfile", word, display_name),
-          command = "spellwand.addToSpellfile",
-          arguments = { idx, word },
-        },
-      })
-    end
-
-    if #spellfiles == 0 then
-      table.insert(actions, {
-        title = string.format("Add '%s' to spellfile (no spellfile configured)", word),
-        command = {
-          title = string.format("Add '%s' to spellfile", word),
-          command = "spellwand.addToSpellfile",
-          arguments = { 1, word },
-        },
-      })
-    end
-
-    local suggestions = vim.fn.spellsuggest(word, M.config.num_suggestions)
-    for idx, sug in ipairs(suggestions) do
-      table.insert(actions, {
-        title = string.format("Change '%s' to '%s'", word, sug),
-        command = {
-          title = string.format("Change '%s' to '%s'", word, sug),
-          command = "spellwand.fix",
-          arguments = { 0, idx },
-        },
-      })
-    end
-
-    return actions
-  end,
-
-  [ms.workspace_executeCommand] = function(err, params, ctx, _)
-    log.debug("[spellwand.handler.workspace.executeCommand] called: " .. params.command)
-    local cmd_fn = commands[params.command]
-    if not cmd_fn then
-      -- Return LSP error response
-      return {
-        code = -32601,  -- MethodNotFound
-        message = "Unknown command: " .. params.command,
-      }
-    end
-
-    local ok, result = pcall(cmd_fn, unpack(params.arguments))
-    if not ok then
-      -- Return LSP error response
-      return {
-        code = -32603,  -- InternalError
-        message = tostring(result),
-      }
-    end
-
-    -- Success: return null (nil in Lua)
-    return nil
-  end,
-
-  [ms.workspace_didChangeConfiguration] = function(err, params, ctx, _)
-    log.debug("[spellwand.handler.workspace.didChangeConfiguration] called")
-    if params.settings and params.settings.spellwand then
-      -- Update global config
-      M.config = vim.tbl_deep_extend("force", M.config, params.settings.spellwand)
-      log.debug("[spellwand.handler.workspace.didChangeConfiguration] Config received: " .. vim.inspect(params.settings.spellwand))
-      log.debug("[spellwand.handler.workspace.didChangeConfiguration] Full config: " .. vim.inspect(M.config))
-
-      -- Re-publish diagnostics for all attached buffers
-      local clients = vim.lsp.get_clients({ name = "spellwand" })
-      for _, client in ipairs(clients) do
-        for bufnr, _ in pairs(client.attached_buffers or {}) do
-          if vim.api.nvim_buf_is_valid(bufnr) then
-            publish_diagnostics(bufnr)
-          end
-        end
-      end
-    end
-    return nil
+  [ms.workspace_executeCommand] = function(self, params)
+    return nil, self:_handle_execute_command(params)
   end,
 }
 
----Create in-process LSP RPC interface
----Implements vim.lsp.rpc.PublicClient for use as vim.lsp.Config.cmd function
----@param dispatchers_arg vim.lsp.rpc.Dispatchers Dispatchers for server->client messages
----@return vim.lsp.rpc.PublicClient RPC client interface
-function M.create_rpc(dispatchers_arg)
-  -- Store dispatchers for publishDiagnostics
-  dispatchers = dispatchers_arg
-  log.debug("[spellwand.rpc.create] called, dispatchers stored")
+---Handle LSP requests using table-driven dispatch
+---@param method vim.lsp.protocol.Method.ClientToServer.Request
+---@param params table
+---@return any result
+---@return lsp.ResponseError? error
+function Client:_handle_request(method, params)
+  local handler = self._request_handlers[method]
+  if handler then
+    return handler(self, params)
+  end
+  return nil, { code = -32601, message = "Method not found: " .. method }
+end
+
+---Notification handlers table
+---@type table<vim.lsp.protocol.Method.ClientToServer.Notification, fun(self: spellwand.Client, params: table)>
+Client._notification_handlers = {
+  [ms.initialized] = function(_self, _params)
+    log.debug("[spellwand.client.initialized] called")
+  end,
+
+  [ms.textDocument_didOpen] = function(self, params)
+    log.debug("[spellwand.client.didOpen] uri=" .. params.textDocument.uri)
+    local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+    self:_publish_diagnostics(bufnr)
+  end,
+
+  [ms.textDocument_didChange] = function(self, params)
+    log.debug("[spellwand.client.didChange] uri=" .. params.textDocument.uri)
+    local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+    self:_publish_diagnostics(bufnr)
+  end,
+
+  [ms.textDocument_didClose] = function(_self, _params)
+    log.debug("[spellwand.client.didClose] called")
+  end,
+
+  [ms.workspace_didChangeConfiguration] = function(self, params)
+    log.debug("[spellwand.client.didChangeConfiguration] called")
+    if params.settings and params.settings.spellwand then
+      self.config = vim.tbl_deep_extend("force", self.config, params.settings.spellwand)
+      self:_refresh_all_diagnostics()
+    end
+  end,
+}
+
+---Handle LSP notifications using table-driven dispatch
+---@param method vim.lsp.protocol.Method.ClientToServer.Notification
+---@param params table
+function Client:_handle_notification(method, params)
+  local handler = self._notification_handlers[method]
+  if handler then
+    handler(self, params)
+  end
+end
+
+---Create the RPC public client interface
+---@return vim.lsp.rpc.PublicClient
+function Client:_create_rpc_interface()
+  local client = self
 
   return {
-    ---Send a request to the server and call callback with response
-    ---@param method string LSP method name
-    ---@param params table|nil Request parameters
-    ---@param callback fun(err: lsp.ResponseError?, result: any) Response callback
-    ---@param notify_reply_callback fun(message_id: integer)? Optional reply notification callback
-    ---@return boolean success Whether request was sent
-    ---@return integer|nil message_id Request ID (nil for notifications)
-    request = function(method, params, callback, notify_reply_callback)
-      log.debug("[spellwand.rpc.request] called: " .. method)
-      local handler = M.handlers[method]
-      if handler then
-        -- ctx is created for handler compatibility with Neovim's LSP convention
-        -- client_id=0 is hardcoded as handlers don't currently use it
-        local ctx = { client_id = 0 }
-        local result = handler(nil, params, ctx, {})
-        if callback then
-          -- Check if result is an error response (has code field)
-          if result and result.code then
-            callback(result, nil)
-          else
-            callback(nil, result)
-          end
-        end
-        -- For in-process, we don't have a real message_id
-        -- Return true and a dummy id (1) for compatibility
-        return true, 1
-      else
-        -- Method not found
-        if callback then
-          callback({
-            code = -32601,
-            message = "Method not found: " .. method,
-          }, nil)
-        end
-        return false, nil
+    request = function(method, params, callback, _)
+      log.debug("[spellwand.rpc.request] " .. method)
+      local result, err = client:_handle_request(method, params)
+      if callback then
+        callback(err, result)
       end
+      return true, 1
     end,
 
-    ---Send a notification to the server (no response expected)
-    ---@param method string LSP method name
-    ---@param params table|nil Notification parameters
-    ---@return boolean success Whether notification was sent
     notify = function(method, params)
-      log.debug("[spellwand.rpc.notify] called: " .. method)
-      local handler = M.handlers[method]
-      if handler then
-        local ctx = { client_id = 0 }
-        handler(nil, params, ctx, {})
-      else
-        log.debug("[spellwand.rpc.notify] no handler for " .. method)
-      end
+      log.debug("[spellwand.rpc.notify] " .. method)
+      client:_handle_notification(method, params)
       return true
     end,
 
-    ---Check if RPC connection is closing
-    ---@return boolean is_closing True if RPC is closing
     is_closing = function()
-      log.debug("[spellwand.rpc.lifecycle] is_closing called")
       return false
     end,
 
-    ---Terminate the RPC connection
     terminate = function()
-      log.debug("[spellwand.rpc.lifecycle] terminate called")
-      -- Cleanup is handled via shutdown handler
+      log.debug("[spellwand.rpc.terminate] called")
     end,
   }
+end
+
+---Default configuration (module-level constant)
+M.default_config = vim.deepcopy(default_config)
+
+---Create in-process LSP RPC interface
+---Factory function that creates a new Client instance
+---@param dispatchers vim.lsp.rpc.Dispatchers Dispatchers provided by Neovim
+---@param config vim.lsp.ClientConfig The resolved client configuration
+---@return vim.lsp.rpc.PublicClient RPC client interface
+function M.create_rpc(dispatchers, config)
+  log.debug("[spellwand.create_rpc] called")
+  local conf = config and config.settings and config.settings.spellwand
+  ---@cast conf spellwand.Config
+  local client = Client.new(dispatchers, conf)
+  return client:_create_rpc_interface()
 end
 
 return M

@@ -32,9 +32,9 @@ local lsp = require("spellwand.lsp")
 
 ---@type vim.lsp.Config
 return {
-  cmd = function(dispatchers)
+  cmd = function(dispatchers, config)
     -- In-process LSP: create RPC interface that dispatches directly to handlers
-    return lsp.create_rpc(dispatchers)
+    return lsp.create_rpc(dispatchers, config)
   end,
   -- Settings are sent to server via workspace/didChangeConfiguration
   settings = {
