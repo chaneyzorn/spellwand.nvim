@@ -3,7 +3,7 @@
 ---@module 'spellwand.types'
 
 ---Spellwand LSP configuration options (settings.spellwand namespace)
----@class spellwand.Config
+---@class spellwand.LspConfig
 ---@field max_file_size integer|nil Maximum file size to check in lines (nil for no limit)
 ---@field strategy "treesitter"|"full" Spell checking strategy: "treesitter" or "full"
 ---@field severity table<string, integer> Severity levels for different error types

@@ -158,7 +158,7 @@ end
 ---Main entry point for getting spelling errors
 ---Filetype filtering is handled by vim.lsp.config's filetypes field
 ---@param bufnr integer
----@param opts spellwand.Config
+---@param opts spellwand.LspConfig
 ---@return spellwand.SpellingError[]
 function M.get_spelling_errors(bufnr, opts)
   log.debug("[spellwand.spelling.get] called for bufnr=" .. bufnr .. ", strategy=" .. tostring(opts.strategy))

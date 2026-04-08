@@ -4,7 +4,7 @@ local ms = vim.lsp.protocol.Methods
 local log = require("vim.lsp.log")
 
 ---Default configuration values
----@type spellwand.Config
+---@type spellwand.LspConfig
 local default_config = {
   max_file_size = 10000,
   strategy = "treesitter",
@@ -45,14 +45,14 @@ end
 
 ---@class spellwand.Client
 ---@field private _dispatchers vim.lsp.rpc.Dispatchers Dispatchers for server→client communication
----@field config spellwand.Config Client-specific configuration
+---@field config spellwand.LspConfig Client-specific configuration
 ---@field private _commands table<string, fun(...): any> Built-in commands for code actions
 local Client = {}
 Client.__index = Client
 
 ---Create a new spellwand Client instance
 ---@param dispatchers vim.lsp.rpc.Dispatchers Dispatchers provided by Neovim
----@param config spellwand.Config? Initial configuration
+---@param config spellwand.LspConfig? Initial configuration
 ---@return spellwand.Client
 function Client.new(dispatchers, config)
   local self = setmetatable({}, Client)
@@ -374,7 +374,7 @@ M.default_config = vim.deepcopy(default_config)
 function M.create_rpc(dispatchers, config)
   log.debug("[spellwand.create_rpc] called")
   local conf = config and config.settings and config.settings.spellwand
-  ---@cast conf spellwand.Config
+  ---@cast conf spellwand.LspConfig
   local client = Client.new(dispatchers, conf)
   return client:_create_rpc_interface()
 end
