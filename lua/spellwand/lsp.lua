@@ -57,9 +57,9 @@ function Client.new(dispatchers, config)
   self._dispatchers = dispatchers
   self.config = vim.deepcopy(config or default_config)
   self._commands = {
-    -- TODO: support auto refresh after addToSpellfile
-    ["spellwand.addToSpellfile"] = function(spellfile_index, word)
+    ["spellwand.addToSpellfile"] = function(bufnr, spellfile_index, word)
       vim.cmd(spellfile_index .. "spellgood " .. word)
+      self:_server_publish_diagnostics(bufnr)
     end,
     ["spellwand.addAllToSpellfile"] = function(bufnr, spellfile_index)
       local spell_errors = self:_server_get_spell_words(bufnr)
@@ -70,6 +70,7 @@ function Client.new(dispatchers, config)
           vim.cmd(spellfile_index .. "spellgood " .. err.word)
         end
       end
+      self:_server_publish_diagnostics(bufnr)
     end,
     ["spellwand.fixTypo"] = function(_, index)
       vim.api.nvim_feedkeys(index .. "z=", "n", false)
@@ -201,7 +202,7 @@ function Client:_server_handle_code_action(params)
       command = {
         title = string.format("Add '%s' to %s spellfile", badword, path),
         command = "spellwand.addToSpellfile",
-        arguments = { idx, badword },
+        arguments = { bufnr, idx, badword },
       },
     })
   end
@@ -212,7 +213,7 @@ function Client:_server_handle_code_action(params)
       command = {
         title = string.format("Add '%s' to spellfile", badword),
         command = "spellwand.addToSpellfile",
-        arguments = { 1, badword },
+        arguments = { bufnr, 1, badword },
       },
     })
   end
