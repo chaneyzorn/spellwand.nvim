@@ -48,46 +48,53 @@ function M.get_spelling_errors_treesitter(bufnr, opts)
   local seen = {}
   local max_errors = opts.max_errors
 
+  -- Helper to process a single spell error and check max_errors limit
+  local function add_spell_error(start_row, start_col, err)
+    local word = err[1]
+    local err_code = err[2]
+    local col_offset = err[3]
+
+    local abs_lnum = start_row + 1
+    local abs_col = start_col + col_offset + 1
+    local key = abs_lnum .. ":" .. abs_col .. ":" .. word
+
+    if seen[key] then
+      return false
+    end
+
+    seen[key] = true
+    table.insert(spell_errors, {
+      word = word,
+      lnum = abs_lnum,
+      col = abs_col,
+      type = ERROR_TYPES[err_code] or ("Spell" .. err_code:gsub("^%l", string.upper)),
+    })
+
+    return #spell_errors >= max_errors
+  end
+
   -- Process each tree (handles injected languages)
   for _, tree in ipairs(trees) do
     local root = tree:root()
 
-    -- Iterate over all captures in the query
     for id, node in query:iter_captures(root, bufnr, 0, -1) do
-      local capture_name = query.captures[id]
-      if capture_name == "spell" then
-        local start_row, start_col, end_row, end_col = node:range()
-        local text = vim.treesitter.get_node_text(node, bufnr)
+      if query.captures[id] ~= "spell" then
+        goto continue
+      end
 
-        if text then
-          local line_spell_errors = vim.spell.check(text)
-          for _, err in ipairs(line_spell_errors) do
-            local word = err[1]
-            local err_code = err[2]
-            local col_offset = err[3]
+      local start_row, start_col = node:range()
+      local text = vim.treesitter.get_node_text(node, bufnr)
+      if not text then
+        goto continue
+      end
 
-            -- Calculate absolute position
-            local abs_lnum = start_row + 1
-            local abs_col = start_col + col_offset + 1
-            local key = abs_lnum .. ":" .. abs_col .. ":" .. word
-
-            if not seen[key] then
-              seen[key] = true
-              table.insert(spell_errors, {
-                word = word,
-                lnum = abs_lnum,
-                col = abs_col,
-                type = ERROR_TYPES[err_code] or ("Spell" .. err_code:gsub("^%l", string.upper)),
-              })
-
-              -- Early return if max_errors reached
-              if #spell_errors >= max_errors then
-                return spell_errors
-              end
-            end
-          end
+      for _, err in ipairs(vim.spell.check(text)) do
+        if add_spell_error(start_row, start_col, err) then
+          return spell_errors
         end
       end
+
+      ::continue::
     end
   end
 
