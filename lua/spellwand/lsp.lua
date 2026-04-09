@@ -181,47 +181,48 @@ end
 function Client:_server_handle_code_action(params)
   local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
   local actions = {}
-  local word = vim.fn.expand("<cword>")
+  local cword = vim.fn.expand("<cword>")
 
-  if not word or word == "" then
+  if not cword or cword == "" then
     return actions
   end
 
-  local badword = vim.fn.spellbadword(word)
-  if badword[1] == "" then
+  local spellbad_result = vim.fn.spellbadword(cword)
+  if spellbad_result[1] == "" then
     return actions
   end
 
+  local badword = spellbad_result[1]
   local spellfiles = get_spellfiles(bufnr)
   for idx, path in ipairs(spellfiles) do
     local display_name = get_spellfile_display_name(path, idx)
     table.insert(actions, {
-      title = string.format("Add '%s' to %s spellfile", word, display_name),
+      title = string.format("Add '%s' to %s spellfile", badword, display_name),
       command = {
-        title = string.format("Add '%s' to %s spellfile", word, display_name),
+        title = string.format("Add '%s' to %s spellfile", badword, display_name),
         command = "spellwand.addToSpellfile",
-        arguments = { idx, word },
+        arguments = { idx, badword },
       },
     })
   end
 
   if #spellfiles == 0 then
     table.insert(actions, {
-      title = string.format("Add '%s' to spellfile (no spellfile configured)", word),
+      title = string.format("Add '%s' to spellfile (no spellfile configured)", badword),
       command = {
-        title = string.format("Add '%s' to spellfile", word),
+        title = string.format("Add '%s' to spellfile", badword),
         command = "spellwand.addToSpellfile",
-        arguments = { 1, word },
+        arguments = { 1, badword },
       },
     })
   end
 
-  local suggestions = vim.fn.spellsuggest(word, self.config.num_suggestions)
+  local suggestions = vim.fn.spellsuggest(badword, self.config.num_suggestions)
   for idx, sug in ipairs(suggestions) do
     table.insert(actions, {
-      title = string.format("Change '%s' to '%s'", word, sug),
+      title = string.format("Change '%s' to '%s'", badword, sug),
       command = {
-        title = string.format("Change '%s' to '%s'", word, sug),
+        title = string.format("Change '%s' to '%s'", badword, sug),
         command = "spellwand.fixTypo",
         arguments = { 0, idx },
       },
