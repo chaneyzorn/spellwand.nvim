@@ -75,9 +75,9 @@ function Client.new(dispatchers, config)
   return self
 end
 
----Get server capabilities
+---Get server capabilities (Server-side)
 ---@return lsp.ServerCapabilities
-function Client:_get_capabilities()
+function Client:_server_get_capabilities()
   return {
     textDocumentSync = {
       openClose = true,
@@ -94,10 +94,10 @@ function Client:_get_capabilities()
   }
 end
 
----Get spelling errors and convert to LSP diagnostics
+---Get spelling errors and convert to LSP diagnostics (Server-side)
 ---@param bufnr integer
 ---@return lsp.Diagnostic[]
-function Client:_get_diagnostics(bufnr)
+function Client:_server_get_diagnostics(bufnr)
   log.debug("[spellwand.client.get_diagnostics] bufnr=" .. bufnr)
 
   if not self.config.cond(bufnr) then
@@ -138,15 +138,15 @@ function Client:_get_diagnostics(bufnr)
   return diagnostics
 end
 
----Publish diagnostics for a buffer
+---Publish diagnostics for a buffer (Server-side)
 ---Uses dispatchers.notification to trigger Neovim's standard diagnostic flow
 ---@param bufnr integer
-function Client:_publish_diagnostics(bufnr)
+function Client:_server_publish_diagnostics(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
 
-  local diagnostics = self:_get_diagnostics(bufnr)
+  local diagnostics = self:_server_get_diagnostics(bufnr)
   local uri = vim.uri_from_bufnr(bufnr)
 
   log.debug("[spellwand.client.publish] " .. uri .. " with " .. #diagnostics .. " diagnostics")
@@ -158,22 +158,22 @@ function Client:_publish_diagnostics(bufnr)
   })
 end
 
----Re-publish diagnostics for all attached buffers
-function Client:_refresh_all_diagnostics()
+---Re-publish diagnostics for all attached buffers (Server-side)
+function Client:_server_refresh_all_diagnostics()
   local clients = vim.lsp.get_clients({ name = "spellwand" })
   for _, client in ipairs(clients) do
     for bufnr, _ in pairs(client.attached_buffers or {}) do
       if vim.api.nvim_buf_is_valid(bufnr) then
-        self:_publish_diagnostics(bufnr)
+        self:_server_publish_diagnostics(bufnr)
       end
     end
   end
 end
 
----Handler for textDocument/codeAction
+---Handler for textDocument/codeAction (Server-side)
 ---@param params lsp.CodeActionParams
 ---@return lsp.CodeAction[]
-function Client:_handle_code_action(params)
+function Client:_server_handle_code_action(params)
   log.debug("[spellwand.client.codeAction] called")
   local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
   local actions = {}
@@ -227,10 +227,10 @@ function Client:_handle_code_action(params)
   return actions
 end
 
----Handler for workspace/executeCommand
+---Handler for workspace/executeCommand (Server-side)
 ---@param params lsp.ExecuteCommandParams
 ---@return lsp.ResponseError? error
-function Client:_handle_execute_command(params)
+function Client:_server_handle_execute_command(params)
   log.debug("[spellwand.client.executeCommand] called: " .. params.command)
   local cmd_fn = self._commands[params.command]
   if not cmd_fn then
@@ -251,9 +251,9 @@ function Client:_handle_execute_command(params)
   return nil
 end
 
----Request handlers table
+---Request handlers table (Server-side)
 ---@type table<vim.lsp.protocol.Method.ClientToServer.Request, fun(self: spellwand.Client, params: table): any, lsp.ResponseError?>
-Client._request_handlers = {
+Client._server_request_handlers = {
   [ms.initialize] = function(self, params)
     log.debug("[spellwand.client.initialize] called")
     local init_settings = params.initializationOptions and params.initializationOptions.settings
@@ -261,7 +261,7 @@ Client._request_handlers = {
       self.config = vim.tbl_deep_extend("force", default_config, init_settings.spellwand)
     end
     return {
-      capabilities = self:_get_capabilities(),
+      capabilities = self:_server_get_capabilities(),
       serverInfo = {
         name = "spellwand",
         version = "0.1.0",
@@ -277,30 +277,30 @@ Client._request_handlers = {
   end,
 
   [ms.textDocument_codeAction] = function(self, params)
-    return self:_handle_code_action(params), nil
+    return self:_server_handle_code_action(params), nil
   end,
 
   [ms.workspace_executeCommand] = function(self, params)
-    return nil, self:_handle_execute_command(params)
+    return nil, self:_server_handle_execute_command(params)
   end,
 }
 
----Handle LSP requests using table-driven dispatch
+---Handle LSP requests using table-driven dispatch (Client-side dispatcher)
 ---@param method vim.lsp.protocol.Method.ClientToServer.Request
 ---@param params table
 ---@return any result
 ---@return lsp.ResponseError? error
-function Client:_handle_request(method, params)
-  local handler = self._request_handlers[method]
+function Client:_client_handle_request(method, params)
+  local handler = self._server_request_handlers[method]
   if handler then
     return handler(self, params)
   end
   return nil, { code = -32601, message = "Method not found: " .. method }
 end
 
----Notification handlers table
+---Notification handlers table (Server-side)
 ---@type table<vim.lsp.protocol.Method.ClientToServer.Notification, fun(self: spellwand.Client, params: table)>
-Client._notification_handlers = {
+Client._server_notification_handlers = {
   [ms.initialized] = function(_self, _params)
     log.debug("[spellwand.client.initialized] called")
   end,
@@ -308,13 +308,13 @@ Client._notification_handlers = {
   [ms.textDocument_didOpen] = function(self, params)
     log.debug("[spellwand.client.didOpen] uri=" .. params.textDocument.uri)
     local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-    self:_publish_diagnostics(bufnr)
+    self:_server_publish_diagnostics(bufnr)
   end,
 
   [ms.textDocument_didChange] = function(self, params)
     log.debug("[spellwand.client.didChange] uri=" .. params.textDocument.uri)
     local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-    self:_publish_diagnostics(bufnr)
+    self:_server_publish_diagnostics(bufnr)
   end,
 
   [ms.textDocument_didClose] = function(_self, _params)
@@ -325,22 +325,22 @@ Client._notification_handlers = {
     log.debug("[spellwand.client.didChangeConfiguration] called")
     if params.settings and params.settings.spellwand then
       self.config = vim.tbl_deep_extend("force", self.config, params.settings.spellwand)
-      self:_refresh_all_diagnostics()
+      self:_server_refresh_all_diagnostics()
     end
   end,
 }
 
----Handle LSP notifications using table-driven dispatch
+---Handle LSP notifications using table-driven dispatch (Client-side dispatcher)
 ---@param method vim.lsp.protocol.Method.ClientToServer.Notification
 ---@param params table
-function Client:_handle_notification(method, params)
-  local handler = self._notification_handlers[method]
+function Client:_client_handle_notification(method, params)
+  local handler = self._server_notification_handlers[method]
   if handler then
     handler(self, params)
   end
 end
 
----Create the RPC public client interface
+---Create the RPC public client interface (Client-side)
 ---@return vim.lsp.rpc.PublicClient
 function Client:_create_rpc_interface()
   local client = self
@@ -348,7 +348,7 @@ function Client:_create_rpc_interface()
   return {
     request = function(method, params, callback, _)
       log.debug("[spellwand.rpc.request] " .. method)
-      local result, err = client:_handle_request(method, params)
+      local result, err = client:_client_handle_request(method, params)
       if callback then
         callback(err, result)
       end
@@ -357,7 +357,7 @@ function Client:_create_rpc_interface()
 
     notify = function(method, params)
       log.debug("[spellwand.rpc.notify] " .. method)
-      client:_handle_notification(method, params)
+      client:_client_handle_notification(method, params)
       return true
     end,
 
