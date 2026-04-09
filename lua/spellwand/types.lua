@@ -9,6 +9,7 @@
 ---@field max_errors integer Maximum number of spell errors to return (early return for performance)
 ---@field preprocess fun(bufnr: integer, spell_errors: spellwand.SpellingError[]): spellwand.SpellingError[] Preprocess spell errors before converting to diagnostics
 ---@field severity table<string, integer> Severity levels for different error types
+---@field messages spellwand.Messages Diagnostic message templates
 ---@field suggest_in_diagnostics boolean Show suggestions in diagnostic message
 ---@field num_suggestions integer Number of suggestions in code actions
 
@@ -18,3 +19,11 @@
 ---@field lnum integer 1-indexed line number
 ---@field col integer 1-indexed column number
 ---@field type string Error type: "SpellBad", "SpellCap", "SpellLocal", "SpellRare"
+
+---Diagnostic message templates
+---@class spellwand.Messages
+---@field SpellBad string Message for unknown words
+---@field SpellCap string Message for capitalization errors
+---@field SpellLocal string Message for local words
+---@field SpellRare string Message for rare words
+---@field SuggestPrefix string Prefix for suggestions (e.g., "did you mean")

@@ -133,6 +133,15 @@ vim.lsp.config("spellwand", {
         SpellRare = vim.diagnostic.severity.INFO,
       },
 
+      -- Diagnostic message templates
+      messages = {
+        SpellBad = "Unknown word",
+        SpellCap = "Capitalization error",
+        SpellLocal = "Local word",
+        SpellRare = "Rare word",
+        SuggestPrefix = "did you mean",
+      },
+
       -- Show suggestions in diagnostic message
       suggest_in_diagnostics = false,
 

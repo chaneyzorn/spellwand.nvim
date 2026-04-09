@@ -19,6 +19,13 @@ local default_config = {
     SpellLocal = vim.diagnostic.severity.HINT,
     SpellRare = vim.diagnostic.severity.INFO,
   },
+  messages = {
+    SpellBad = "Unknown word",
+    SpellCap = "Capitalization error",
+    SpellLocal = "Local word",
+    SpellRare = "Rare word",
+    SuggestPrefix = "did you mean",
+  },
   suggest_in_diagnostics = false,
   num_suggestions = 3,
 }
@@ -64,6 +71,8 @@ function Client.new(dispatchers, config)
   self._dispatchers = dispatchers
   self.config = vim.deepcopy(config or default_config)
   self._commands = {
+    -- TODO: add more code actions
+    -- TODO: support auto refresh after addToSpellfile
     ["spellwand.addToSpellfile"] = function(spellfile_index, word)
       vim.cmd(spellfile_index .. "spellgood " .. word)
     end,
@@ -110,11 +119,13 @@ function Client:_server_get_diagnostics(bufnr)
   for _, err in ipairs(spell_errors) do
     local severity = self.config.severity[err.type]
     if severity then
-      local message = err.word
+      local prefix = self.config.messages[err.type] or "Spelling issue"
+      local message = string.format('%s: "%s"', prefix, err.word)
       if self.config.suggest_in_diagnostics and self.config.num_suggestions > 0 then
         local suggestions = vim.fn.spellsuggest(err.word, self.config.num_suggestions)
         if #suggestions > 0 then
-          message = message .. " (suggestions: " .. table.concat(suggestions, ", ") .. ")"
+          local suggest_prefix = self.config.messages.SuggestPrefix or "did you mean"
+          message = string.format("%s (%s: %s)", message, suggest_prefix, table.concat(suggestions, ", "))
         end
       end
 
@@ -343,6 +354,7 @@ function Client:_create_rpc_interface()
     end,
 
     is_closing = function()
+      -- TODO: test stop_client
       return false
     end,
 
