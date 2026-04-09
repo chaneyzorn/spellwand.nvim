@@ -6,6 +6,7 @@
 ---@class spellwand.LspConfig
 ---@field cond fun(bufnr: integer): boolean Condition function to determine whether to check the buffer
 ---@field strategies ("treesitter"|"full")[] List of strategies to try in order, until one succeeds
+---@field max_errors integer Maximum number of spell errors to return (early return for performance)
 ---@field severity table<string, integer> Severity levels for different error types
 ---@field suggest_in_diagnostics boolean Show suggestions in diagnostic message
 ---@field num_suggestions integer Number of suggestions in code actions

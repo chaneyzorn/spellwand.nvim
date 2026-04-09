@@ -10,6 +10,7 @@ local default_config = {
     return true
   end,
   strategies = { "treesitter", "full" },
+  max_errors = 999,
   severity = {
     SpellBad = vim.diagnostic.severity.WARN,
     SpellCap = vim.diagnostic.severity.HINT,

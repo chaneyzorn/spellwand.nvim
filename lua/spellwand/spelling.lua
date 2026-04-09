@@ -13,8 +13,9 @@ local ERROR_TYPES = {
 
 ---Get spelling errors using Treesitter @spell captures
 ---@param bufnr integer
+---@param opts spellwand.LspConfig
 ---@return spellwand.SpellingError[]|nil Returns nil if treesitter is not available
-function M.get_spelling_errors_treesitter(bufnr)
+function M.get_spelling_errors_treesitter(bufnr, opts)
   log.debug("[spellwand.spelling.treesitter] called for bufnr=" .. bufnr)
 
   -- Get the treesitter parser for the buffer
@@ -53,6 +54,7 @@ function M.get_spelling_errors_treesitter(bufnr)
 
   local spell_errors = {}
   local seen = {}
+  local max_errors = opts.max_errors
 
   -- Process each tree (handles injected languages)
   for _, tree in ipairs(trees) do
@@ -85,6 +87,12 @@ function M.get_spelling_errors_treesitter(bufnr)
                 col = abs_col,
                 type = ERROR_TYPES[err_code] or ("Spell" .. err_code:gsub("^%l", string.upper)),
               })
+
+              -- Early return if max_errors reached
+              if #spell_errors >= max_errors then
+                log.debug("[spellwand.spelling.treesitter] reached max_errors limit (" .. max_errors .. ")")
+                return spell_errors
+              end
             end
           end
         end
@@ -98,12 +106,13 @@ end
 
 ---Get spelling errors by iterating through buffer content (full buffer scan)
 ---@param bufnr integer
+---@param opts spellwand.LspConfig
 ---@param start_row integer|nil 0-indexed
 ---@param start_col integer|nil 0-indexed
 ---@param end_row integer|nil 0-indexed
 ---@param end_col integer|nil 0-indexed
 ---@return spellwand.SpellingError[]
-function M.get_spelling_errors_full(bufnr, start_row, start_col, end_row, end_col)
+function M.get_spelling_errors_full(bufnr, opts, start_row, start_col, end_row, end_col)
   start_row = start_row or 0
   start_col = start_col or 0
 
@@ -127,6 +136,7 @@ function M.get_spelling_errors_full(bufnr, start_row, start_col, end_row, end_co
 
   local spell_errors = {}
   local seen = {}
+  local max_errors = opts.max_errors
 
   for n, line in ipairs(lines) do
     local line_spell_errors = vim.spell.check(line)
@@ -148,6 +158,12 @@ function M.get_spelling_errors_full(bufnr, start_row, start_col, end_row, end_co
           col = abs_col,
           type = ERROR_TYPES[err_code] or ("Spell" .. err_code:gsub("^%l", string.upper)),
         })
+
+        -- Early return if max_errors reached
+        if #spell_errors >= max_errors then
+          log.debug("[spellwand.spelling.full] reached max_errors limit (" .. max_errors .. ")")
+          return spell_errors
+        end
       end
     end
   end
@@ -156,7 +172,7 @@ function M.get_spelling_errors_full(bufnr, start_row, start_col, end_row, end_co
 end
 
 ---Strategy implementations map
----@type table<string, fun(bufnr: integer): spellwand.SpellingError[]|nil>
+---@type table<string, fun(bufnr: integer, opts: spellwand.LspConfig): spellwand.SpellingError[]|nil>
 local strategy_impl = {
   treesitter = M.get_spelling_errors_treesitter,
   full = M.get_spelling_errors_full,
@@ -178,10 +194,10 @@ function M.get_spelling_errors(bufnr, opts)
     log.debug("[spellwand.spelling.get] trying strategy: " .. strategy)
     local impl = strategy_impl[strategy]
     if impl then
-      local spell_errors = impl(bufnr)
+      local spell_errors = impl(bufnr, opts)
       if spell_errors ~= nil then
         log.debug(
-        "[spellwand.spelling.get] strategy '" .. strategy .. "' succeeded with " .. #spell_errors .. " spell errors"
+          "[spellwand.spelling.get] strategy '" .. strategy .. "' succeeded with " .. #spell_errors .. " spell errors"
         )
         return spell_errors
       end
