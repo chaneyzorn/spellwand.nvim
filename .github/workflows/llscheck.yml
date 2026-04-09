@@ -1,0 +1,38 @@
+name: llscheck
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+  push:
+    branches:
+      - main
+jobs:
+  llscheck:
+    runs-on: ubuntu-latest
+    name: llscheck
+    steps:
+      - uses: actions/checkout@master
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+      - uses: luarocks/gh-actions-lua@v11
+        with:
+          luaVersion: "luajit-openresty"
+      - name: Install lua-language-server
+        uses: jdx/mise-action@v2
+        with:
+          tool_versions: |
+            lua-language-server latest
+      - uses: luarocks/gh-actions-luarocks@v6
+      - name: Install llscheck
+        run: |
+          luarocks install llscheck
+          luarocks install nlua
+      - name: Print Version
+        run: |
+          lua-language-server --version
+      - name: llscheck
+        run: |
+          VIMRUNTIME=`nlua -e 'io.write(os.getenv("VIMRUNTIME"))'` llscheck --configpath .github/workflows/.luarc.json .
