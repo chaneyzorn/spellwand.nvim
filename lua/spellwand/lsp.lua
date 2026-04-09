@@ -57,10 +57,19 @@ function Client.new(dispatchers, config)
   self._dispatchers = dispatchers
   self.config = vim.deepcopy(config or default_config)
   self._commands = {
-    -- TODO: add more code actions
     -- TODO: support auto refresh after addToSpellfile
     ["spellwand.addToSpellfile"] = function(spellfile_index, word)
       vim.cmd(spellfile_index .. "spellgood " .. word)
+    end,
+    ["spellwand.addAllToSpellfile"] = function(bufnr, spellfile_index)
+      local spell_errors = self:_server_get_spell_words(bufnr)
+      local seen = {}
+      for _, err in ipairs(spell_errors) do
+        if not seen[err.word] then
+          seen[err.word] = true
+          vim.cmd(spellfile_index .. "spellgood " .. err.word)
+        end
+      end
     end,
     ["spellwand.fixTypo"] = function(_, index)
       vim.api.nvim_feedkeys(index .. "z=", "n", false)
@@ -88,6 +97,15 @@ function Client:_server_get_capabilities()
   }
 end
 
+---Get processed spell errors for a buffer (Server-side)
+---@param bufnr integer
+---@return spellwand.SpellingError[]
+function Client:_server_get_spell_words(bufnr)
+  local spell_errors = require("spellwand.spelling").get_spelling_errors(bufnr, self.config)
+  spell_errors = self.config.preprocess(bufnr, spell_errors)
+  return spell_errors
+end
+
 ---Get spelling errors and convert to LSP diagnostics (Server-side)
 ---@param bufnr integer
 ---@return lsp.Diagnostic[]
@@ -96,10 +114,7 @@ function Client:_server_get_diagnostics(bufnr)
     return {}
   end
 
-  local spell_errors = require("spellwand.spelling").get_spelling_errors(bufnr, self.config)
-
-  -- Apply user-defined preprocessing
-  spell_errors = self.config.preprocess(bufnr, spell_errors)
+  local spell_errors = self:_server_get_spell_words(bufnr)
 
   local diagnostics = {}
   for _, err in ipairs(spell_errors) do
@@ -198,6 +213,29 @@ function Client:_server_handle_code_action(params)
         title = string.format("Add '%s' to spellfile", badword),
         command = "spellwand.addToSpellfile",
         arguments = { 1, badword },
+      },
+    })
+  end
+
+  -- Add all diagnostics to spellfile
+  for idx, path in ipairs(spellfiles) do
+    table.insert(actions, {
+      title = string.format("Add all misspelled words to %s", path),
+      command = {
+        title = string.format("Add all to %s", path),
+        command = "spellwand.addAllToSpellfile",
+        arguments = { bufnr, idx },
+      },
+    })
+  end
+
+  if #spellfiles == 0 then
+    table.insert(actions, {
+      title = "Add all misspelled words to spellfile (no spellfile configured)",
+      command = {
+        title = "Add all to spellfile",
+        command = "spellwand.addAllToSpellfile",
+        arguments = { bufnr, 1 },
       },
     })
   end
