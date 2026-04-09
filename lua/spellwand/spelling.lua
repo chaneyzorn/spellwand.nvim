@@ -1,7 +1,5 @@
 local M = {}
 
-local log = require("vim.lsp.log")
-
 ---Error type mapping from vim.spell.check() codes to LSP error types
 ---@type table<string, string>
 local ERROR_TYPES = {
@@ -16,15 +14,11 @@ local ERROR_TYPES = {
 ---@param opts spellwand.LspConfig
 ---@return spellwand.SpellingError[]|nil Returns nil if treesitter is not available
 function M.get_spelling_errors_treesitter(bufnr, opts)
-  log.debug("[spellwand.spelling.treesitter] called for bufnr=" .. bufnr)
-
   -- Get the treesitter parser for the buffer
   local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
   if not ok or not parser then
-    log.debug("[spellwand.spelling.treesitter] parser not available: " .. tostring(parser))
     return nil
   end
-  log.debug("[spellwand.spelling.treesitter] parser for lang=" .. parser:lang())
 
   -- Parse the buffer and get all trees (for injections)
   local trees = parser:parse()
@@ -47,10 +41,8 @@ function M.get_spelling_errors_treesitter(bufnr, opts)
     end
   end
   if not has_spell_capture then
-    log.debug("[spellwand.spelling.treesitter] no @spell capture in highlights query")
     return nil
   end
-  log.debug("[spellwand.spelling.treesitter] has @spell capture in query")
 
   local spell_errors = {}
   local seen = {}
@@ -90,7 +82,6 @@ function M.get_spelling_errors_treesitter(bufnr, opts)
 
               -- Early return if max_errors reached
               if #spell_errors >= max_errors then
-                log.debug("[spellwand.spelling.treesitter] reached max_errors limit (" .. max_errors .. ")")
                 return spell_errors
               end
             end
@@ -100,7 +91,6 @@ function M.get_spelling_errors_treesitter(bufnr, opts)
     end
   end
 
-  log.debug("[spellwand.spelling.treesitter] found " .. #spell_errors .. " total spell errors")
   return spell_errors
 end
 
@@ -161,7 +151,6 @@ function M.get_spelling_errors_full(bufnr, opts, start_row, start_col, end_row, 
 
         -- Early return if max_errors reached
         if #spell_errors >= max_errors then
-          log.debug("[spellwand.spelling.full] reached max_errors limit (" .. max_errors .. ")")
           return spell_errors
         end
       end
@@ -184,31 +173,18 @@ local strategy_impl = {
 ---@param opts spellwand.LspConfig
 ---@return spellwand.SpellingError[]
 function M.get_spelling_errors(bufnr, opts)
-  log.debug("[spellwand.spelling.get] called for bufnr=" .. bufnr)
-
-  -- Log spell status for debugging (do not block)
-  log.debug("[spellwand.spelling.get] vim.wo.spell=" .. tostring(vim.wo.spell))
-
   -- Try strategies in order until one succeeds (returns non-nil)
   for _, strategy in ipairs(opts.strategies or { "full" }) do
-    log.debug("[spellwand.spelling.get] trying strategy: " .. strategy)
     local impl = strategy_impl[strategy]
     if impl then
       local spell_errors = impl(bufnr, opts)
       if spell_errors ~= nil then
-        log.debug(
-          "[spellwand.spelling.get] strategy '" .. strategy .. "' succeeded with " .. #spell_errors .. " spell errors"
-        )
         return spell_errors
       end
-      log.debug("[spellwand.spelling.get] strategy '" .. strategy .. "' returned nil, trying next")
-    else
-      log.warn("[spellwand.spelling.get] unknown strategy: " .. tostring(strategy))
     end
   end
 
   -- All strategies failed or strategies list was empty
-  log.debug("[spellwand.spelling.get] all strategies exhausted, returning empty")
   return {}
 end
 

@@ -1,7 +1,6 @@
 local M = {}
 
 local ms = vim.lsp.protocol.Methods
-local log = require("vim.lsp.log")
 
 ---Default configuration values
 ---@type spellwand.LspConfig
@@ -98,10 +97,7 @@ end
 ---@param bufnr integer
 ---@return lsp.Diagnostic[]
 function Client:_server_get_diagnostics(bufnr)
-  log.debug("[spellwand.client.get_diagnostics] bufnr=" .. bufnr)
-
   if not self.config.cond(bufnr) then
-    log.debug("[spellwand.client.get_diagnostics] condition not met, skipping")
     return {}
   end
 
@@ -149,8 +145,6 @@ function Client:_server_publish_diagnostics(bufnr)
   local diagnostics = self:_server_get_diagnostics(bufnr)
   local uri = vim.uri_from_bufnr(bufnr)
 
-  log.debug("[spellwand.client.publish] " .. uri .. " with " .. #diagnostics .. " diagnostics")
-
   ---@diagnostic disable-next-line: param-type-mismatch
   self._dispatchers.notification(ms.textDocument_publishDiagnostics, {
     uri = uri,
@@ -174,7 +168,6 @@ end
 ---@param params lsp.CodeActionParams
 ---@return lsp.CodeAction[]
 function Client:_server_handle_code_action(params)
-  log.debug("[spellwand.client.codeAction] called")
   local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
   local actions = {}
   local word = vim.fn.expand("<cword>")
@@ -231,7 +224,6 @@ end
 ---@param params lsp.ExecuteCommandParams
 ---@return lsp.ResponseError? error
 function Client:_server_handle_execute_command(params)
-  log.debug("[spellwand.client.executeCommand] called: " .. params.command)
   local cmd_fn = self._commands[params.command]
   if not cmd_fn then
     return {
@@ -255,7 +247,6 @@ end
 ---@type table<vim.lsp.protocol.Method.ClientToServer.Request, fun(self: spellwand.Client, params: table): any, lsp.ResponseError?>
 Client._server_request_handlers = {
   [ms.initialize] = function(self, params)
-    log.debug("[spellwand.client.initialize] called")
     local init_settings = params.initializationOptions and params.initializationOptions.settings
     if init_settings and init_settings.spellwand then
       self.config = vim.tbl_deep_extend("force", default_config, init_settings.spellwand)
@@ -267,11 +258,10 @@ Client._server_request_handlers = {
         version = "0.1.0",
       },
     },
-    nil
+      nil
   end,
 
   [ms.shutdown] = function(self, _params)
-    log.debug("[spellwand.client.shutdown] called")
     self.config = vim.deepcopy(default_config)
     return nil, nil
   end,
@@ -301,28 +291,21 @@ end
 ---Notification handlers table (Server-side)
 ---@type table<vim.lsp.protocol.Method.ClientToServer.Notification, fun(self: spellwand.Client, params: table)>
 Client._server_notification_handlers = {
-  [ms.initialized] = function(_self, _params)
-    log.debug("[spellwand.client.initialized] called")
-  end,
+  [ms.initialized] = function(_self, _params) end,
 
   [ms.textDocument_didOpen] = function(self, params)
-    log.debug("[spellwand.client.didOpen] uri=" .. params.textDocument.uri)
     local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
     self:_server_publish_diagnostics(bufnr)
   end,
 
   [ms.textDocument_didChange] = function(self, params)
-    log.debug("[spellwand.client.didChange] uri=" .. params.textDocument.uri)
     local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
     self:_server_publish_diagnostics(bufnr)
   end,
 
-  [ms.textDocument_didClose] = function(_self, _params)
-    log.debug("[spellwand.client.didClose] called")
-  end,
+  [ms.textDocument_didClose] = function(_self, _params) end,
 
   [ms.workspace_didChangeConfiguration] = function(self, params)
-    log.debug("[spellwand.client.didChangeConfiguration] called")
     if params.settings and params.settings.spellwand then
       self.config = vim.tbl_deep_extend("force", self.config, params.settings.spellwand)
       self:_server_refresh_all_diagnostics()
@@ -347,7 +330,6 @@ function Client:_create_rpc_interface()
 
   return {
     request = function(method, params, callback, _)
-      log.debug("[spellwand.rpc.request] " .. method)
       local result, err = client:_client_handle_request(method, params)
       if callback then
         callback(err, result)
@@ -356,7 +338,6 @@ function Client:_create_rpc_interface()
     end,
 
     notify = function(method, params)
-      log.debug("[spellwand.rpc.notify] " .. method)
       client:_client_handle_notification(method, params)
       return true
     end,
@@ -365,9 +346,7 @@ function Client:_create_rpc_interface()
       return false
     end,
 
-    terminate = function()
-      log.debug("[spellwand.rpc.terminate] called")
-    end,
+    terminate = function() end,
   }
 end
 
@@ -380,7 +359,6 @@ M.default_config = vim.deepcopy(default_config)
 ---@param config vim.lsp.ClientConfig The resolved client configuration
 ---@return vim.lsp.rpc.PublicClient RPC client interface
 function M.create_rpc(dispatchers, config)
-  log.debug("[spellwand.create_rpc] called")
   local conf = config and config.settings and config.settings.spellwand
   ---@cast conf spellwand.LspConfig
   local client = Client.new(dispatchers, conf)
