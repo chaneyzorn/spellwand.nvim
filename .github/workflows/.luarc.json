@@ -8,6 +8,7 @@
   },
   "workspace": {
     "checkThirdParty": false,
+    "ignoreDir": [".lua", ".luarocks"],
     "library": [
       "$VIMRUNTIME"
     ]
