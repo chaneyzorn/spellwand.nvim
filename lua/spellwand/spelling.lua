@@ -51,7 +51,7 @@ function M.get_spelling_errors_treesitter(bufnr)
   end
   log.debug("[spellwand.spelling.treesitter] has @spell capture in query")
 
-  local errors = {}
+  local spell_errors = {}
   local seen = {}
 
   -- Process each tree (handles injected languages)
@@ -66,8 +66,8 @@ function M.get_spelling_errors_treesitter(bufnr)
         local text = vim.treesitter.get_node_text(node, bufnr)
 
         if text then
-          local line_errors = vim.spell.check(text)
-          for _, err in ipairs(line_errors) do
+          local line_spell_errors = vim.spell.check(text)
+          for _, err in ipairs(line_spell_errors) do
             local word = err[1]
             local err_code = err[2]
             local col_offset = err[3]
@@ -79,7 +79,7 @@ function M.get_spelling_errors_treesitter(bufnr)
 
             if not seen[key] then
               seen[key] = true
-              table.insert(errors, {
+              table.insert(spell_errors, {
                 word = word,
                 lnum = abs_lnum,
                 col = abs_col,
@@ -92,8 +92,8 @@ function M.get_spelling_errors_treesitter(bufnr)
     end
   end
 
-  log.debug("[spellwand.spelling.treesitter] found " .. #errors .. " total errors")
-  return errors
+  log.debug("[spellwand.spelling.treesitter] found " .. #spell_errors .. " total spell errors")
+  return spell_errors
 end
 
 ---Get spelling errors by iterating through buffer content (full buffer scan)
@@ -125,12 +125,12 @@ function M.get_spelling_errors_full(bufnr, start_row, start_col, end_row, end_co
   -- Trim first line from start_col
   lines[1] = string.sub(lines[1], start_col + 1)
 
-  local errors = {}
+  local spell_errors = {}
   local seen = {}
 
   for n, line in ipairs(lines) do
-    local line_errors = vim.spell.check(line)
-    for _, err in ipairs(line_errors) do
+    local line_spell_errors = vim.spell.check(line)
+    for _, err in ipairs(line_spell_errors) do
       local word = err[1]
       local err_code = err[2]
       local col = err[3]
@@ -142,7 +142,7 @@ function M.get_spelling_errors_full(bufnr, start_row, start_col, end_row, end_co
 
       if not seen[key] then
         seen[key] = true
-        table.insert(errors, {
+        table.insert(spell_errors, {
           word = word,
           lnum = abs_lnum,
           col = abs_col,
@@ -152,8 +152,15 @@ function M.get_spelling_errors_full(bufnr, start_row, start_col, end_row, end_co
     end
   end
 
-  return errors
+  return spell_errors
 end
+
+---Strategy implementations map
+---@type table<string, fun(bufnr: integer): spellwand.SpellingError[]|nil>
+local strategy_impl = {
+  treesitter = M.get_spelling_errors_treesitter,
+  full = M.get_spelling_errors_full,
+}
 
 ---Main entry point for getting spelling errors
 ---Filetype filtering is handled by vim.lsp.config's filetypes field
@@ -161,26 +168,32 @@ end
 ---@param opts spellwand.LspConfig
 ---@return spellwand.SpellingError[]
 function M.get_spelling_errors(bufnr, opts)
-  log.debug("[spellwand.spelling.get] called for bufnr=" .. bufnr .. ", strategy=" .. tostring(opts.strategy))
+  log.debug("[spellwand.spelling.get] called for bufnr=" .. bufnr)
 
   -- Log spell status for debugging (do not block)
   log.debug("[spellwand.spelling.get] vim.wo.spell=" .. tostring(vim.wo.spell))
 
-  -- Use treesitter strategy by default, fallback to full if treesitter returns nil
-  if opts.strategy == "treesitter" or opts.strategy == nil then
-    log.debug("[spellwand.spelling.get] trying treesitter")
-    local ts_errors = M.get_spelling_errors_treesitter(bufnr)
-    if ts_errors ~= nil then
-      log.debug("[spellwand.spelling.get] treesitter success with " .. #ts_errors .. " errors")
-      return ts_errors
+  -- Try strategies in order until one succeeds (returns non-nil)
+  for _, strategy in ipairs(opts.strategies or { "full" }) do
+    log.debug("[spellwand.spelling.get] trying strategy: " .. strategy)
+    local impl = strategy_impl[strategy]
+    if impl then
+      local spell_errors = impl(bufnr)
+      if spell_errors ~= nil then
+        log.debug(
+        "[spellwand.spelling.get] strategy '" .. strategy .. "' succeeded with " .. #spell_errors .. " spell errors"
+        )
+        return spell_errors
+      end
+      log.debug("[spellwand.spelling.get] strategy '" .. strategy .. "' returned nil, trying next")
+    else
+      log.warn("[spellwand.spelling.get] unknown strategy: " .. tostring(strategy))
     end
-    log.debug("[spellwand.spelling.get] treesitter failed, falling back to full scan")
-  else
-    log.debug("[spellwand.spelling.get] using full scan")
   end
-  local full_errors = M.get_spelling_errors_full(bufnr)
-  log.debug("[spellwand.spelling.full] found " .. #full_errors .. " errors")
-  return full_errors
+
+  -- All strategies failed or strategies list was empty
+  log.debug("[spellwand.spelling.get] all strategies exhausted, returning empty")
+  return {}
 end
 
 return M

@@ -5,7 +5,7 @@
 ---Spellwand LSP configuration options (settings.spellwand namespace)
 ---@class spellwand.LspConfig
 ---@field cond fun(bufnr: integer): boolean Condition function to determine whether to check the buffer
----@field strategy "treesitter"|"full" Spell checking strategy: "treesitter" or "full"
+---@field strategies ("treesitter"|"full")[] List of strategies to try in order, until one succeeds
 ---@field severity table<string, integer> Severity levels for different error types
 ---@field suggest_in_diagnostics boolean Show suggestions in diagnostic message
 ---@field num_suggestions integer Number of suggestions in code actions

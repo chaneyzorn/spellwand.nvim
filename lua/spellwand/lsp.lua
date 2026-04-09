@@ -9,7 +9,7 @@ local default_config = {
   cond = function(_bufnr)
     return true
   end,
-  strategy = "treesitter",
+  strategies = { "treesitter", "full" },
   severity = {
     SpellBad = vim.diagnostic.severity.WARN,
     SpellCap = vim.diagnostic.severity.HINT,
