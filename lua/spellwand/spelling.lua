@@ -166,16 +166,6 @@ function M.get_spelling_errors(bufnr, opts)
   -- Log spell status for debugging (do not block)
   log.debug("[spellwand.spelling.get] vim.wo.spell=" .. tostring(vim.wo.spell))
 
-  -- Check max file size
-  if opts.max_file_size then
-    local line_count = vim.api.nvim_buf_line_count(bufnr)
-    log.debug("[spellwand.spelling.get] line_count=" .. line_count .. ", max_file_size=" .. tostring(opts.max_file_size))
-    if line_count > opts.max_file_size then
-      log.debug("[spellwand.spelling.get] File too large, returning empty")
-      return {}
-    end
-  end
-
   -- Use treesitter strategy by default, fallback to full if treesitter returns nil
   if opts.strategy == "treesitter" or opts.strategy == nil then
     log.debug("[spellwand.spelling.get] trying treesitter")

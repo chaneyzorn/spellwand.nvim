@@ -226,28 +226,6 @@ Available actions:
 - Add word to each configured spellfile (with appropriate display name)
 - Change to one of the suggestions
 
-## How It Works
-
-spellwand.nvim implements a pure LSP protocol flow:
-
-```text
-┌─────────────┐     textDocument/didOpen      ┌─────────────┐
-│   Neovim    │ ─────────────────────────────→│  spellwand  │
-│   (Client)  │                               │   (Server)  │
-│             │←──────────────────────────────│             │
-│             │     textDocument/publishDiagnostics          │
-└─────────────┘                               └─────────────┘
-       │                                              ↑
-       │ textDocument/didChange                       │
-       └──────────────────────────────────────────────┘
-```
-
-1. **LSP Config**: Defined in `lsp/spellwand.lua` using `vim.lsp.config()`
-2. **Protocol**: Uses standard LSP `textDocumentSync` capability
-3. **Change Detection**: Neovim sends `textDocument/didChange` on buffer edits
-4. **Diagnostics**: Server responds with `textDocument/publishDiagnostics`
-5. **No Vim autocmds**: Pure LSP protocol implementation
-
 ## Troubleshooting
 
 ### No diagnostics showing

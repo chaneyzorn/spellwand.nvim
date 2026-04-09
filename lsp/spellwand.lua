@@ -28,16 +28,13 @@
 --- - `suggest_in_diagnostics`: Show suggestions in diagnostic message (default: false)
 --- - `num_suggestions`: Number of suggestions in code actions (default: 3)
 
-local lsp = require("spellwand.lsp")
-
 ---@type vim.lsp.Config
 return {
   cmd = function(dispatchers, config)
     -- In-process LSP: create RPC interface that dispatches directly to handlers
-    return lsp.create_rpc(dispatchers, config)
+    return require("spellwand.lsp").create_rpc(dispatchers, config)
   end,
-  -- Settings are sent to server via workspace/didChangeConfiguration
   settings = {
-    spellwand = vim.deepcopy(lsp.default_config),
+    spellwand = vim.deepcopy(require("spellwand.lsp").default_config),
   },
 }

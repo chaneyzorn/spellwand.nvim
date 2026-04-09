@@ -6,7 +6,9 @@ local log = require("vim.lsp.log")
 ---Default configuration values
 ---@type spellwand.LspConfig
 local default_config = {
-  max_file_size = 10000,
+  cond = function(_bufnr)
+    return true
+  end,
   strategy = "treesitter",
   severity = {
     SpellBad = vim.diagnostic.severity.WARN,
@@ -94,11 +96,9 @@ end
 function Client:_get_diagnostics(bufnr)
   log.debug("[spellwand.client.get_diagnostics] bufnr=" .. bufnr)
 
-  if self.config.max_file_size then
-    local line_count = vim.api.nvim_buf_line_count(bufnr)
-    if line_count > self.config.max_file_size then
-      return {}
-    end
+  if not self.config.cond(bufnr) then
+    log.debug("[spellwand.client.get_diagnostics] condition not met, skipping")
+    return {}
   end
 
   local errors = require("spellwand.spelling").get_spelling_errors(bufnr, self.config)
@@ -259,7 +259,8 @@ Client._request_handlers = {
         name = "spellwand",
         version = "0.1.0",
       },
-    }, nil
+    },
+    nil
   end,
 
   [ms.shutdown] = function(self, _params)

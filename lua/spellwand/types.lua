@@ -4,7 +4,7 @@
 
 ---Spellwand LSP configuration options (settings.spellwand namespace)
 ---@class spellwand.LspConfig
----@field max_file_size integer|nil Maximum file size to check in lines (nil for no limit)
+---@field cond fun(bufnr: integer): boolean Condition function to determine whether to check the buffer
 ---@field strategy "treesitter"|"full" Spell checking strategy: "treesitter" or "full"
 ---@field severity table<string, integer> Severity levels for different error types
 ---@field suggest_in_diagnostics boolean Show suggestions in diagnostic message
