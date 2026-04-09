@@ -258,7 +258,7 @@ When your cursor is on a misspelled word, use `gra` (or `:lua vim.lsp.buf.code_a
 
 Available actions:
 
-- Add word to each configured spellfile (shown as "local"/"global")
+- Add word to each configured spellfile (shown with full path)
 - Change to one of the suggestions
 
 ## Limitations

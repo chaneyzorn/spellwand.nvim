@@ -41,20 +41,6 @@ local function get_spellfiles(bufnr)
   return vim.split(spellfile, ",", { plain = true })
 end
 
----Get spellfile display name (basename or "global"/"local" alias)
----@param path string
----@param index integer
----@return string
-local function get_spellfile_display_name(path, index)
-  if path:match("/.spell/") then
-    return "local"
-  end
-  if index == 1 then
-    return "global"
-  end
-  return vim.fn.fnamemodify(path, ":t:r")
-end
-
 ---@class spellwand.Client
 ---@field private _dispatchers vim.lsp.rpc.Dispatchers Dispatchers for server→client communication
 ---@field config spellwand.LspConfig Client-specific configuration
@@ -195,11 +181,10 @@ function Client:_server_handle_code_action(params)
   local badword = spellbad_result[1]
   local spellfiles = get_spellfiles(bufnr)
   for idx, path in ipairs(spellfiles) do
-    local display_name = get_spellfile_display_name(path, idx)
     table.insert(actions, {
-      title = string.format("Add '%s' to %s spellfile", badword, display_name),
+      title = string.format("Add '%s' to %s spellfile", badword, path),
       command = {
-        title = string.format("Add '%s' to %s spellfile", badword, display_name),
+        title = string.format("Add '%s' to %s spellfile", badword, path),
         command = "spellwand.addToSpellfile",
         arguments = { idx, badword },
       },
