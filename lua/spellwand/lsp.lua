@@ -11,6 +11,9 @@ local default_config = {
   end,
   strategies = { "treesitter", "full" },
   max_errors = 999,
+  preprocess = function(_bufnr, spell_errors)
+    return spell_errors
+  end,
   severity = {
     SpellBad = vim.diagnostic.severity.WARN,
     SpellCap = vim.diagnostic.severity.HINT,
@@ -102,10 +105,13 @@ function Client:_get_diagnostics(bufnr)
     return {}
   end
 
-  local errors = require("spellwand.spelling").get_spelling_errors(bufnr, self.config)
+  local spell_errors = require("spellwand.spelling").get_spelling_errors(bufnr, self.config)
+
+  -- Apply user-defined preprocessing
+  spell_errors = self.config.preprocess(bufnr, spell_errors)
 
   local diagnostics = {}
-  for _, err in ipairs(errors) do
+  for _, err in ipairs(spell_errors) do
     local severity = self.config.severity[err.type]
     if severity then
       local message = err.word
