@@ -85,7 +85,7 @@ function Client:_server_get_capabilities()
   return {
     textDocumentSync = {
       openClose = true,
-      change = vim.lsp.protocol.TextDocumentSyncKind.None,
+      change = vim.lsp.protocol.TextDocumentSyncKind.Incremental,
     },
     codeActionProvider = true,
     executeCommandProvider = {
