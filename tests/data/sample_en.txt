@@ -1,0 +1,14 @@
+This is a sampel text with somme speling erors.
+
+The quick brown fox jumps over the lazy dog.
+But sometims the fox failes to catch the rabbbit.
+
+Neovim is a great text editor for coders.
+It has many poweful featurs for developers.
+
+Here are more mispelled words:
+- recieve (should be receive)
+- occured (should be occurred)
+- seperate (should be separate)
+- definately (should be definitely)
+- accomodate (should be accommodate)
