@@ -99,6 +99,16 @@ Then just enable:
 vim.lsp.enable("spellwand")
 ```
 
+To adjust the debounce time for diagnostic updates (Neovim LSP client built-in option):
+
+```lua
+vim.lsp.config("spellwand", {
+  flags = {
+    debounce_text_changes = 300,  -- milliseconds, default is 150
+  },
+})
+```
+
 ### Available Options
 
 All configuration options and their defaults (passed via `settings.spellwand`):
@@ -194,30 +204,6 @@ preprocess = function(_bufnr, spell_errors)
     return true
   end, spell_errors)
 end
-```
-
-Combine multiple conditions:
-
-```lua
-vim.lsp.config("spellwand", {
-  settings = {
-    spellwand = {
-      cond = function(bufnr)
-        local name = vim.api.nvim_buf_get_name(bufnr)
-        -- Skip node_modules and large files
-        if name:match("/node_modules/") then return false end
-        if vim.api.nvim_buf_line_count(bufnr) > 50000 then return false end
-        return true
-      end,
-      preprocess = function(_bufnr, spell_errors)
-        -- Only show SpellBad errors, ignore capitalization hints
-        return vim.tbl_filter(function(err)
-          return err.type == "SpellBad"
-        end, spell_errors)
-      end,
-    }
-  }
-})
 ```
 
 ## Usage
