@@ -5,7 +5,7 @@
 ---Spellwand LSP configuration options (settings.spellwand namespace)
 ---@class spellwand.LspConfig
 ---@field cond fun(bufnr: integer): boolean Condition function to determine whether to check the buffer
----@field strategies ("treesitter"|"full")[] List of strategies to try in order, until one succeeds
+---@field strategies ("treesitter"|"full")[] | fun(bufnr: integer): ("treesitter"|"full")[] List of strategies to try in order, or a function returning the strategy list
 ---@field max_errors integer Maximum number of spell errors to return (early return for performance)
 ---@field preprocess fun(bufnr: integer, spell_errors: spellwand.SpellingError[]): spellwand.SpellingError[] Preprocess spell errors before converting to diagnostics
 ---@field severity table<string, integer> Severity levels for different error types

@@ -187,8 +187,14 @@ local strategy_impl = {
 ---@param opts spellwand.LspConfig
 ---@return spellwand.SpellingError[]
 function M.get_spelling_errors(bufnr, opts)
+  -- Resolve strategies (function or array)
+  local strategies = opts.strategies or { "full" }
+  if type(strategies) == "function" then
+    strategies = strategies(bufnr)
+  end
+
   -- Try strategies in order until one succeeds (returns non-nil)
-  for _, strategy in ipairs(opts.strategies or { "full" }) do
+  for _, strategy in ipairs(strategies) do
     local impl = strategy_impl[strategy]
     if impl then
       local spell_errors = impl(bufnr, opts)

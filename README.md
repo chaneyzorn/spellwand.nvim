@@ -121,7 +121,7 @@ vim.lsp.config("spellwand", {
       -- Condition function: fun(bufnr: integer): boolean
       cond = function(bufnr) return true end,
 
-      -- List of strategies with fallback: ("treesitter"|"full")[]
+      -- List of strategies with fallback: ("treesitter"|"full")[] | fun(bufnr: integer): ("treesitter"|"full")[]
       -- Tries each strategy in order until one succeeds
       strategies = { "treesitter", "full" },
 
@@ -203,6 +203,18 @@ preprocess = function(_bufnr, spell_errors)
     seen[err.word] = true
     return true
   end, spell_errors)
+end
+```
+
+Use a function for `strategies` to dynamically choose based on buffer:
+
+```lua
+strategies = function(bufnr)
+  -- Use full scan for gitcommit (typically short, no treesitter parser needed)
+  if vim.bo[bufnr].filetype == "gitcommit" then
+    return { "full" }
+  end
+  return { "treesitter", "full" }
 end
 ```
 
