@@ -2,28 +2,24 @@
 
 An in-process LSP server for Neovim that provides spell checking diagnostics and code actions, leveraging Neovim's built-in spell checking capabilities.
 
-This plugin runs within Neovim's process, giving it direct access to Neovim's spell checking state (`spellfile`, `spelllang`) and enabling seamless integration with native spell/LSP keybindings.
+Uses Neovim's built-in spell checking, so results are always consistent with native behavior. Also demonstrates how to implement an in-process LSP server.
 
-## TLDR
-
-Use Neovim's built-in LSP client to get spell checking diagnostics:
-
-```lua
-vim.lsp.enable("spellwand")
-```
-
-Then in any buffer with `spell` enabled:
-
-- See diagnostics for misspelled words
-- Use `]s`/`[s` to navigate between errors
-- Use `gra` (or `:lua vim.lsp.buf.code_action()`) to see suggestions or add words to dictionary
-- Native `z=` and `zg` keybindings continue to work as expected
-
-### Why?
-
-Bring Neovim's built-in spell checking to the LSP ecosystem—zero configuration drift, identical results.
-
-This project also serves as a practical example of how to implement an in-process LSP server in Neovim.
+- [spellwand.nvim](#spellwandnvim)
+  - [Features](#features)
+  - [Requirements](#requirements)
+  - [Installation](#installation)
+    - [lazy.nvim](#lazynvim)
+    - [vim.pack (Neovim 0.12+)](#vimpack-neovim-012)
+  - [Configuration](#configuration)
+    - [Available Options](#available-options)
+    - [Customization Examples](#customization-examples)
+  - [Usage](#usage)
+    - [Standard LSP Commands](#standard-lsp-commands)
+    - [Key Mappings](#key-mappings)
+    - [Code Actions](#code-actions)
+  - [Limitations](#limitations)
+  - [Alternative Spell Checking LSP Servers](#alternative-spell-checking-lsp-servers)
+  - [Acknowledgments](#acknowledgments)
 
 ## Features
 
