@@ -185,81 +185,89 @@ end
 ---@return lsp.CodeAction[]
 function Client:_server_handle_code_action(params)
   local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-  local actions = {}
-  local cword = vim.fn.expand("<cword>")
-
-  if not cword or cword == "" then
-    return actions
-  end
-
-  local spellbad_result
-  vim.api.nvim_buf_call(bufnr, function()
-    spellbad_result = vim.fn.spellbadword(cword)
-  end)
-  if not spellbad_result or spellbad_result[1] == "" then
-    return actions
-  end
-
-  local badword = spellbad_result[1]
   local spellfiles = get_spellfiles(bufnr)
-  for idx, path in ipairs(spellfiles) do
-    table.insert(actions, {
-      title = string.format("Add '%s' to %s spellfile", badword, path),
-      command = {
+  local actions = {}
+
+  -- Check if cursor is on a misspelled word
+  local cword = vim.fn.expand("<cword>")
+  local badword = nil
+  if cword and cword ~= "" then
+    local spellbad_result
+    vim.api.nvim_buf_call(bufnr, function()
+      spellbad_result = vim.fn.spellbadword(cword)
+    end)
+    if spellbad_result and spellbad_result[1] ~= "" then
+      badword = spellbad_result[1]
+    end
+  end
+
+  -- Add cursor-specific actions only if cursor is on a misspelled word
+  if badword then
+    for idx, path in ipairs(spellfiles) do
+      table.insert(actions, {
         title = string.format("Add '%s' to %s spellfile", badword, path),
-        command = "spellwand.addToSpellfile",
-        arguments = { bufnr, idx, badword },
-      },
-    })
-  end
+        command = {
+          title = string.format("Add '%s' to %s spellfile", badword, path),
+          command = "spellwand.addToSpellfile",
+          arguments = { bufnr, idx, badword },
+        },
+      })
+    end
 
-  if #spellfiles == 0 then
-    table.insert(actions, {
-      title = string.format("Add '%s' to spellfile (no spellfile configured)", badword),
-      command = {
-        title = string.format("Add '%s' to spellfile", badword),
-        command = "spellwand.addToSpellfile",
-        arguments = { bufnr, 1, badword },
-      },
-    })
-  end
+    if #spellfiles == 0 then
+      table.insert(actions, {
+        title = string.format("Add '%s' to spellfile (no spellfile configured)", badword),
+        command = {
+          title = string.format("Add '%s' to spellfile", badword),
+          command = "spellwand.addToSpellfile",
+          arguments = { bufnr, 1, badword },
+        },
+      })
+    end
 
-  -- Add all diagnostics to spellfile
-  for idx, path in ipairs(spellfiles) do
-    table.insert(actions, {
-      title = string.format("Add all misspelled words to %s", path),
-      command = {
-        title = string.format("Add all to %s", path),
-        command = "spellwand.addAllToSpellfile",
-        arguments = { bufnr, idx },
-      },
-    })
-  end
-
-  if #spellfiles == 0 then
-    table.insert(actions, {
-      title = "Add all misspelled words to spellfile (no spellfile configured)",
-      command = {
-        title = "Add all to spellfile",
-        command = "spellwand.addAllToSpellfile",
-        arguments = { bufnr, 1 },
-      },
-    })
-  end
-
-  local suggestions
-  vim.api.nvim_buf_call(bufnr, function()
-    suggestions = vim.fn.spellsuggest(badword, self.config.num_suggestions)
-  end)
-  for idx, sug in ipairs(suggestions or {}) do
-    table.insert(actions, {
-      title = string.format("Change '%s' to '%s'", badword, sug),
-      command = {
+    local suggestions
+    vim.api.nvim_buf_call(bufnr, function()
+      suggestions = vim.fn.spellsuggest(badword, self.config.num_suggestions)
+    end)
+    for idx, sug in ipairs(suggestions or {}) do
+      table.insert(actions, {
         title = string.format("Change '%s' to '%s'", badword, sug),
-        command = "spellwand.fixTypo",
-        arguments = { 0, idx },
-      },
-    })
+        command = {
+          title = string.format("Change '%s' to '%s'", badword, sug),
+          command = "spellwand.fixTypo",
+          arguments = { 0, idx },
+        },
+      })
+    end
+  end
+
+  -- Use existing diagnostics to avoid recomputing spell errors
+  local diagnostics = vim.diagnostic.get(bufnr, { source = "spellwand" })
+  local has_diagnostics = #diagnostics > 0
+
+  -- Add "Add all" actions if there are any diagnostics in the buffer
+  if has_diagnostics then
+    for idx, path in ipairs(spellfiles) do
+      table.insert(actions, {
+        title = string.format("Add all misspelled words to %s", path),
+        command = {
+          title = string.format("Add all to %s", path),
+          command = "spellwand.addAllToSpellfile",
+          arguments = { bufnr, idx },
+        },
+      })
+    end
+
+    if #spellfiles == 0 then
+      table.insert(actions, {
+        title = "Add all misspelled words to spellfile (no spellfile configured)",
+        command = {
+          title = "Add all to spellfile",
+          command = "spellwand.addAllToSpellfile",
+          arguments = { bufnr, 1 },
+        },
+      })
+    end
   end
 
   return actions
