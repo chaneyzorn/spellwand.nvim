@@ -124,8 +124,11 @@ function Client:_server_get_diagnostics(bufnr)
       local prefix = self.config.messages[err.type] or "Spelling issue"
       local message = string.format('%s: "%s"', prefix, err.word)
       if self.config.suggest_in_diagnostics and self.config.num_suggestions > 0 then
-        local suggestions = vim.fn.spellsuggest(err.word, self.config.num_suggestions)
-        if #suggestions > 0 then
+        local suggestions
+        vim.api.nvim_buf_call(bufnr, function()
+          suggestions = vim.fn.spellsuggest(err.word, self.config.num_suggestions)
+        end)
+        if suggestions and #suggestions > 0 then
           local suggest_prefix = self.config.messages.SuggestPrefix or "did you mean"
           message = string.format("%s (%s: %s)", message, suggest_prefix, table.concat(suggestions, ", "))
         end
@@ -189,8 +192,11 @@ function Client:_server_handle_code_action(params)
     return actions
   end
 
-  local spellbad_result = vim.fn.spellbadword(cword)
-  if spellbad_result[1] == "" then
+  local spellbad_result
+  vim.api.nvim_buf_call(bufnr, function()
+    spellbad_result = vim.fn.spellbadword(cword)
+  end)
+  if not spellbad_result or spellbad_result[1] == "" then
     return actions
   end
 
@@ -241,8 +247,11 @@ function Client:_server_handle_code_action(params)
     })
   end
 
-  local suggestions = vim.fn.spellsuggest(badword, self.config.num_suggestions)
-  for idx, sug in ipairs(suggestions) do
+  local suggestions
+  vim.api.nvim_buf_call(bufnr, function()
+    suggestions = vim.fn.spellsuggest(badword, self.config.num_suggestions)
+  end)
+  for idx, sug in ipairs(suggestions or {}) do
     table.insert(actions, {
       title = string.format("Change '%s' to '%s'", badword, sug),
       command = {

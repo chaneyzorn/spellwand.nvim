@@ -88,7 +88,11 @@ function M.get_spelling_errors_treesitter(bufnr, opts)
         goto continue
       end
 
-      for _, err in ipairs(vim.spell.check(text)) do
+      local check_results
+      vim.api.nvim_buf_call(bufnr, function()
+        check_results = vim.spell.check(text)
+      end)
+      for _, err in ipairs(check_results or {}) do
         if add_spell_error(start_row, start_col, err) then
           return spell_errors
         end
@@ -136,8 +140,11 @@ function M.get_spelling_errors_full(bufnr, opts, start_row, start_col, end_row, 
   local max_errors = opts.max_errors
 
   for n, line in ipairs(lines) do
-    local line_spell_errors = vim.spell.check(line)
-    for _, err in ipairs(line_spell_errors) do
+    local line_spell_errors
+    vim.api.nvim_buf_call(bufnr, function()
+      line_spell_errors = vim.spell.check(line)
+    end)
+    for _, err in ipairs(line_spell_errors or {}) do
       local word = err[1]
       local err_code = err[2]
       local col = err[3]
