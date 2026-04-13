@@ -20,11 +20,11 @@ local default_config = {
     SpellRare = vim.diagnostic.severity.INFO,
   },
   messages = {
-    SpellBad = "Unknown word",
-    SpellCap = "Capitalization error",
-    SpellLocal = "Local word",
-    SpellRare = "Rare word",
-    SuggestPrefix = "did you mean",
+    SpellBad = 'Unknown word: "%s"',
+    SpellCap = 'Capitalization error: "%s"',
+    SpellLocal = 'Local word: "%s"',
+    SpellRare = 'Rare word: "%s"',
+    SuggestPrefix = "did you mean: %s",
   },
   suggest_in_diagnostics = false,
   num_suggestions = 3,
@@ -119,7 +119,27 @@ function Client:_server_get_spell_words(bufnr)
   return spell_errors
 end
 
----Get spelling errors and convert to LSP diagnostics (Server-side)
+---Format diagnostic message for a spelling error (Server-side)
+---@param word string The misspelled word
+---@param err_type string Error type (SpellBad, SpellCap, etc.)
+---@param suggestions string[]? Optional suggestions list
+---@return string formatted message
+function Client:_server_format_message(word, err_type, suggestions)
+  local messages = self.config.messages
+  if type(messages) == "function" then
+    return messages(word, err_type, suggestions)
+  end
+  -- Backward compatibility: string templates
+  local template = messages[err_type] or 'Spelling issue: "%s"'
+  local message = string.format(template, word)
+  if suggestions and #suggestions > 0 then
+    local suggest_template = messages.SuggestPrefix or "did you mean: %s"
+    message = string.format("%s (%s)", message, string.format(suggest_template, table.concat(suggestions, ", ")))
+  end
+  return message
+end
+
+---Get diagnostics for a buffer (Server-side)
 ---@param bufnr integer
 ---@return lsp.Diagnostic[]
 function Client:_server_get_diagnostics(bufnr)
@@ -133,18 +153,13 @@ function Client:_server_get_diagnostics(bufnr)
   for _, err in ipairs(spell_errors) do
     local severity = self.config.severity[err.type]
     if severity then
-      local prefix = self.config.messages[err.type] or "Spelling issue"
-      local message = string.format('%s: "%s"', prefix, err.word)
+      local suggestions
       if self.config.suggest_in_diagnostics and self.config.num_suggestions > 0 then
-        local suggestions
         vim.api.nvim_buf_call(bufnr, function()
           suggestions = vim.fn.spellsuggest(err.word, self.config.num_suggestions)
         end)
-        if suggestions and #suggestions > 0 then
-          local suggest_prefix = self.config.messages.SuggestPrefix or "did you mean"
-          message = string.format("%s (%s: %s)", message, suggest_prefix, table.concat(suggestions, ", "))
-        end
       end
+      local message = self:_server_format_message(err.word, err.type, suggestions)
 
       table.insert(diagnostics, {
         range = {

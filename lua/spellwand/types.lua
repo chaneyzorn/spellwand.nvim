@@ -20,10 +20,13 @@
 ---@field col integer 1-indexed column number
 ---@field type string Error type: "SpellBad", "SpellCap", "SpellLocal", "SpellRare"
 
----Diagnostic message templates
----@class spellwand.Messages
----@field SpellBad string Message for unknown words
----@field SpellCap string Message for capitalization errors
----@field SpellLocal string Message for local words
----@field SpellRare string Message for rare words
----@field SuggestPrefix string Prefix for suggestions (e.g., "did you mean")
+---Diagnostic message format templates
+---@class spellwand.MessageTemplates
+---@field SpellBad string Format template for unknown words, e.g. 'Unknown word: "%s"'
+---@field SpellCap string Format template for capitalization errors, e.g. 'Capitalization error: "%s"'
+---@field SpellLocal string Format template for local words, e.g. 'Local word: "%s"'
+---@field SpellRare string Format template for rare words, e.g. 'Rare word: "%s"'
+---@field SuggestPrefix string Format template for suggestions prefix, e.g. "did you mean: %s"
+
+---Diagnostic message formatter type (templates table or custom function)
+---@alias spellwand.Messages spellwand.MessageTemplates|fun(word: string, type: string, suggestions: string[]|nil): string

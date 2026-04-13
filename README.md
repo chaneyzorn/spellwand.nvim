@@ -139,13 +139,13 @@ vim.lsp.config("spellwand", {
         SpellRare = vim.diagnostic.severity.INFO,
       },
 
-      ---@type spellwand.Messages Diagnostic message templates
+      ---@type spellwand.Messages Diagnostic message formatter (templates or custom function)
       messages = {
-        SpellBad = "Unknown word",
-        SpellCap = "Capitalization error",
-        SpellLocal = "Local word",
-        SpellRare = "Rare word",
-        SuggestPrefix = "did you mean",
+        SpellBad = 'Unknown word: "%s"',
+        SpellCap = 'Capitalization error: "%s"',
+        SpellLocal = 'Local word: "%s"',
+        SpellRare = 'Rare word: "%s"',
+        SuggestPrefix = "did you mean: %s",
       },
 
       ---@type boolean Show suggestions in diagnostic message
@@ -215,6 +215,19 @@ strategies = function(bufnr)
     return { "full" }
   end
   return { "treesitter", "full" }
+end
+```
+
+Use a custom `messages` function for full control:
+
+```lua
+messages = function(word, type, suggestions)
+  local icons = { SpellBad = "🚨", SpellCap = "⚠️ ", SpellLocal = "📌", SpellRare = "📎" }
+  local icon = icons[type] or "❓"
+  if suggestions and #suggestions > 0 then
+    return string.format("%s %s (try: %s)", icon, word, table.concat(suggestions, ", "))
+  end
+  return string.format("%s %s", icon, word)
 end
 ```
 
