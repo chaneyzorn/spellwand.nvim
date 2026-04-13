@@ -58,22 +58,32 @@ function Client.new(dispatchers, config)
   self.config = vim.deepcopy(config or default_config)
   self._commands = {
     ["spellwand.addToSpellfile"] = function(bufnr, spellfile_index, word)
-      vim.cmd(spellfile_index .. "spellgood " .. word)
-      self:_server_publish_diagnostics(bufnr)
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.cmd(spellfile_index .. "spellgood " .. word)
+      end)
+      self:_server_refresh_all_diagnostics()
     end,
     ["spellwand.addAllToSpellfile"] = function(bufnr, spellfile_index)
       local spell_errors = self:_server_get_spell_words(bufnr)
       local seen = {}
+      local words_to_add = {}
       for _, err in ipairs(spell_errors) do
         if not seen[err.word] then
           seen[err.word] = true
-          vim.cmd(spellfile_index .. "spellgood " .. err.word)
+          table.insert(words_to_add, err.word)
         end
       end
-      self:_server_publish_diagnostics(bufnr)
+      vim.api.nvim_buf_call(bufnr, function()
+        for _, word in ipairs(words_to_add) do
+          vim.cmd(spellfile_index .. "spellgood " .. word)
+        end
+      end)
+      self:_server_refresh_all_diagnostics()
     end,
-    ["spellwand.fixTypo"] = function(_, index)
-      vim.api.nvim_feedkeys(index .. "z=", "n", false)
+    ["spellwand.fixTypo"] = function(bufnr, index)
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.api.nvim_feedkeys(index .. "z=", "n", false)
+      end)
     end,
   }
   return self
@@ -170,10 +180,12 @@ end
 
 ---Re-publish diagnostics for all attached buffers (Server-side)
 function Client:_server_refresh_all_diagnostics()
+  local seen = {}
   local clients = vim.lsp.get_clients({ name = "spellwand" })
   for _, client in ipairs(clients) do
     for bufnr, _ in pairs(client.attached_buffers or {}) do
-      if vim.api.nvim_buf_is_valid(bufnr) then
+      if not seen[bufnr] then
+        seen[bufnr] = true
         self:_server_publish_diagnostics(bufnr)
       end
     end
@@ -235,7 +247,7 @@ function Client:_server_handle_code_action(params)
         command = {
           title = string.format("Change '%s' to '%s'", badword, sug),
           command = "spellwand.fixTypo",
-          arguments = { 0, idx },
+          arguments = { bufnr, idx },
         },
       })
     end

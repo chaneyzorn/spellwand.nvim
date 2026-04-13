@@ -9,11 +9,11 @@ local ERROR_TYPES = {
   rare = "SpellRare",
 }
 
----Get spelling errors using Treesitter @spell captures
+---Get spelling errors using Treesitter @spell captures (internal implementation)
 ---@param bufnr integer
 ---@param opts spellwand.LspConfig
 ---@return spellwand.SpellingError[]|nil Returns nil if treesitter is not available
-function M.get_spelling_errors_treesitter(bufnr, opts)
+local function _get_spelling_errors_treesitter(bufnr, opts)
   -- Get the treesitter parser for the buffer
   local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
   if not ok or not parser then
@@ -88,11 +88,7 @@ function M.get_spelling_errors_treesitter(bufnr, opts)
         goto continue
       end
 
-      local check_results
-      vim.api.nvim_buf_call(bufnr, function()
-        check_results = vim.spell.check(text)
-      end)
-      for _, err in ipairs(check_results or {}) do
+      for _, err in ipairs(vim.spell.check(text)) do
         if add_spell_error(start_row, start_col, err) then
           return spell_errors
         end
@@ -105,7 +101,7 @@ function M.get_spelling_errors_treesitter(bufnr, opts)
   return spell_errors
 end
 
----Get spelling errors by iterating through buffer content (full buffer scan)
+---Get spelling errors by iterating through buffer content (full buffer scan, internal implementation)
 ---@param bufnr integer
 ---@param opts spellwand.LspConfig
 ---@param start_row integer|nil 0-indexed
@@ -113,7 +109,7 @@ end
 ---@param end_row integer|nil 0-indexed
 ---@param end_col integer|nil 0-indexed
 ---@return spellwand.SpellingError[]
-function M.get_spelling_errors_full(bufnr, opts, start_row, start_col, end_row, end_col)
+local function _get_spelling_errors_full(bufnr, opts, start_row, start_col, end_row, end_col)
   start_row = start_row or 0
   start_col = start_col or 0
 
@@ -140,11 +136,7 @@ function M.get_spelling_errors_full(bufnr, opts, start_row, start_col, end_row, 
   local max_errors = opts.max_errors
 
   for n, line in ipairs(lines) do
-    local line_spell_errors
-    vim.api.nvim_buf_call(bufnr, function()
-      line_spell_errors = vim.spell.check(line)
-    end)
-    for _, err in ipairs(line_spell_errors or {}) do
+    for _, err in ipairs(vim.spell.check(line)) do
       local word = err[1]
       local err_code = err[2]
       local col = err[3]
@@ -174,11 +166,23 @@ function M.get_spelling_errors_full(bufnr, opts, start_row, start_col, end_row, 
   return spell_errors
 end
 
----Strategy implementations map
+---Strategy implementations map (wrapped with nvim_buf_call for correct buffer context)
 ---@type table<string, fun(bufnr: integer, opts: spellwand.LspConfig): spellwand.SpellingError[]|nil>
 local strategy_impl = {
-  treesitter = M.get_spelling_errors_treesitter,
-  full = M.get_spelling_errors_full,
+  treesitter = function(bufnr, opts)
+    local result
+    vim.api.nvim_buf_call(bufnr, function()
+      result = _get_spelling_errors_treesitter(bufnr, opts)
+    end)
+    return result
+  end,
+  full = function(bufnr, opts)
+    local result
+    vim.api.nvim_buf_call(bufnr, function()
+      result = _get_spelling_errors_full(bufnr, opts)
+    end)
+    return result
+  end,
 }
 
 ---Main entry point for getting spelling errors
