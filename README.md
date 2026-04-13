@@ -115,23 +115,23 @@ All configuration options and their defaults (passed via `settings.spellwand`):
 
 ```lua
 vim.lsp.config("spellwand", {
-  filetypes = nil,  -- Filetypes to attach to (nil = all filetypes)
+  filetypes = nil,  ---@type string[]? Filetypes to attach to (nil = all filetypes)
   settings = {
     spellwand = {
-      -- Condition function: fun(bufnr: integer): boolean
+      ---@type fun(bufnr: integer): boolean Condition function
       cond = function(bufnr) return true end,
 
-      -- List of strategies with fallback: ("treesitter"|"full")[] | fun(bufnr: integer): ("treesitter"|"full")[]
-      -- Tries each strategy in order until one succeeds
+      ---@type ("treesitter"|"full")[] | fun(bufnr: integer): ("treesitter"|"full")[]
+      ---Tries each strategy in order until one succeeds
       strategies = { "treesitter", "full" },
 
-      -- Maximum errors to return
+      ---@type integer Maximum errors to return
       max_errors = 999,
 
-      -- Preprocess function: fun(bufnr: integer, spell_errors: spellwand.SpellingError[]): spellwand.SpellingError[]
+      ---@type fun(bufnr: integer, spell_errors: spellwand.SpellingError[]): spellwand.SpellingError[]
       preprocess = function(bufnr, spell_errors) return spell_errors end,
 
-      -- Severity mapping
+      ---@type table<string, integer> Severity mapping
       severity = {
         SpellBad = vim.diagnostic.severity.WARN,
         SpellCap = vim.diagnostic.severity.HINT,
@@ -139,7 +139,7 @@ vim.lsp.config("spellwand", {
         SpellRare = vim.diagnostic.severity.INFO,
       },
 
-      -- Diagnostic message templates
+      ---@type spellwand.Messages Diagnostic message templates
       messages = {
         SpellBad = "Unknown word",
         SpellCap = "Capitalization error",
@@ -148,10 +148,10 @@ vim.lsp.config("spellwand", {
         SuggestPrefix = "did you mean",
       },
 
-      -- Show suggestions in diagnostic message
+      ---@type boolean Show suggestions in diagnostic message
       suggest_in_diagnostics = false,
 
-      -- Number of suggestions in code actions
+      ---@type integer Number of suggestions in code actions
       num_suggestions = 3,
     }
   }
