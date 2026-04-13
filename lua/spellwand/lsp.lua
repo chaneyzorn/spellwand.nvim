@@ -45,6 +45,7 @@ end
 ---@field private _dispatchers vim.lsp.rpc.Dispatchers Dispatchers for server→client communication
 ---@field config spellwand.LspConfig Client-specific configuration
 ---@field private _commands table<string, fun(...): any> Built-in commands for code actions
+---@field private _closing boolean Whether the client is closing
 local Client = {}
 Client.__index = Client
 
@@ -55,6 +56,7 @@ Client.__index = Client
 function Client.new(dispatchers, config)
   local self = setmetatable({}, Client)
   self._dispatchers = dispatchers
+  self._closing = false
   self.config = vim.deepcopy(config or default_config)
   self._commands = {
     ["spellwand.addToSpellfile"] = function(bufnr, spellfile_index, word)
@@ -191,6 +193,21 @@ function Client:_server_refresh_all_diagnostics()
       end
     end
   end
+end
+
+---Terminate the server and trigger the on_exit callback (Server-side).
+---
+---External LSP servers rely on vim.system to trigger on_exit when the process
+---exits. For in-process servers, we must manually trigger it:
+---  - Normal exit: via the 'exit' notification handler
+---  - Force exit: via the terminate() RPC interface
+function Client:_server_terminate()
+  if self._closing then
+    return
+  end
+  self._closing = true
+  print("[spellwand] _server_terminate: server closing")
+  self._dispatchers.on_exit(0, 0)
 end
 
 ---Handler for textDocument/codeAction (Server-side)
@@ -385,6 +402,11 @@ Client._server_notification_handlers = {
       self:_server_refresh_all_diagnostics()
     end
   end,
+
+  [ms.exit] = function(self, _params)
+    -- Called after successful shutdown response during normal client stop
+    self:_server_terminate()
+  end,
 }
 
 ---Handle LSP notifications using table-driven dispatch (Client-side dispatcher)
@@ -400,11 +422,9 @@ end
 ---Create the RPC public client interface (Client-side)
 ---@return vim.lsp.rpc.PublicClient
 function Client:_create_rpc_interface()
-  local client = self
-
   return {
     request = function(method, params, callback, _)
-      local result, err = client:_client_handle_request(method, params)
+      local result, err = self:_client_handle_request(method, params)
       if callback then
         callback(err, result)
       end
@@ -412,16 +432,18 @@ function Client:_create_rpc_interface()
     end,
 
     notify = function(method, params)
-      client:_client_handle_notification(method, params)
+      self:_client_handle_notification(method, params)
       return true
     end,
 
     is_closing = function()
-      -- TODO: test stop_client
-      return false
+      return self._closing
     end,
 
-    terminate = function() end,
+    -- Called when force-stop is requested or shutdown request fails
+    terminate = function()
+      self:_server_terminate()
+    end,
   }
 end
 

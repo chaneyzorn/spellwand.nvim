@@ -34,7 +34,7 @@ Uses Neovim's built-in spell checking, so results are always consistent with nat
 
 ## Requirements
 
-- Neovim 0.11+
+- Neovim 0.12+
 - `spell` option enabled (`:set spell`)
 - Treesitter queries providing `@spell` captures for context-aware checking (falls back to full buffer scan if unavailable)
 
@@ -229,7 +229,7 @@ Since spellwand is a standard LSP server, you control it using Neovim's built-in
 :lua vim.lsp.enable('spellwand')
 
 " Disable spellwand (stop all spellwand clients)
-:lua vim.lsp.stop_client(vim.lsp.get_clients({ name = 'spellwand' }))
+:lsp stop spellwand
 
 " Check if spellwand is attached
 :checkhealth vim.lsp
