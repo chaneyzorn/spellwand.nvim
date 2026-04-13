@@ -163,12 +163,13 @@ end
 ---Publish diagnostics for a buffer (Server-side)
 ---Uses dispatchers.notification to trigger Neovim's standard diagnostic flow
 ---@param bufnr integer
-function Client:_server_publish_diagnostics(bufnr)
+---@param diagnostics lsp.Diagnostic[]? Optional diagnostics to publish (defaults to computed)
+function Client:_server_publish_diagnostics(bufnr, diagnostics)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
 
-  local diagnostics = self:_server_get_diagnostics(bufnr)
+  diagnostics = diagnostics or self:_server_get_diagnostics(bufnr)
   local uri = vim.uri_from_bufnr(bufnr)
 
   ---@diagnostic disable-next-line: param-type-mismatch
@@ -368,7 +369,15 @@ Client._server_notification_handlers = {
     self:_server_publish_diagnostics(bufnr)
   end,
 
-  [ms.textDocument_didClose] = function(_self, _params) end,
+  [ms.textDocument_didSave] = function(_self, _params)
+    -- noop, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
+  end,
+
+  [ms.textDocument_didClose] = function(self, params)
+    -- clear stale diagnostics, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
+    local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+    self:_server_publish_diagnostics(bufnr, {})
+  end,
 
   [ms.workspace_didChangeConfiguration] = function(self, params)
     if params.settings and params.settings.spellwand then
