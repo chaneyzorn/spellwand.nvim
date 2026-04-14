@@ -91,6 +91,8 @@ function Client.new(dispatchers, config)
     end,
   }
   self._pending_refresh = {}
+  self:_init_request_handlers()
+  self:_init_notification_handlers()
   return self
 end
 
@@ -369,37 +371,37 @@ function Client:_server_handle_execute_command(params)
   return nil
 end
 
----Request handlers table (Server-side)
----@type table<vim.lsp.protocol.Method.ClientToServer.Request, fun(self: spellwand.Client, params: table): any, lsp.ResponseError?>
-Client._server_request_handlers = {
-  [ms.initialize] = function(self, params)
-    local init_settings = params.initializationOptions and params.initializationOptions.settings
-    if init_settings and init_settings.spellwand then
-      self.config = vim.tbl_deep_extend("force", default_config, init_settings.spellwand)
-    end
-    return {
-      capabilities = self:_server_get_capabilities(),
-      serverInfo = {
-        name = "spellwand",
-        version = "0.1.0",
-      },
-    },
-      nil
-  end,
+---Initialize request handlers table (Server-side)
+function Client:_init_request_handlers()
+  self._server_request_handlers = {
+    [ms.initialize] = function(params)
+      local init_settings = params.initializationOptions and params.initializationOptions.settings
+      if init_settings and init_settings.spellwand then
+        self.config = vim.tbl_deep_extend("force", default_config, init_settings.spellwand)
+      end
+      return {
+        capabilities = self:_server_get_capabilities(),
+        serverInfo = {
+          name = "spellwand",
+          version = "0.1.0",
+        },
+      }, nil
+    end,
 
-  [ms.shutdown] = function(self, _params)
-    self.config = vim.deepcopy(default_config)
-    return nil, nil
-  end,
+    [ms.shutdown] = function(_params)
+      self.config = vim.deepcopy(default_config)
+      return nil, nil
+    end,
 
-  [ms.textDocument_codeAction] = function(self, params)
-    return self:_server_handle_code_action(params), nil
-  end,
+    [ms.textDocument_codeAction] = function(params)
+      return self:_server_handle_code_action(params), nil
+    end,
 
-  [ms.workspace_executeCommand] = function(self, params)
-    return nil, self:_server_handle_execute_command(params)
-  end,
-}
+    [ms.workspace_executeCommand] = function(params)
+      return nil, self:_server_handle_execute_command(params)
+    end,
+  }
+end
 
 ---Handle LSP requests using table-driven dispatch (Client-side dispatcher)
 ---@param method vim.lsp.protocol.Method.ClientToServer.Request
@@ -409,56 +411,57 @@ Client._server_request_handlers = {
 function Client:_client_handle_request(method, params)
   local handler = self._server_request_handlers[method]
   if handler then
-    return handler(self, params)
+    return handler(params)
   end
   return nil, { code = -32601, message = "Method not found: " .. method }
 end
 
----Notification handlers table (Server-side)
----@type table<vim.lsp.protocol.Method.ClientToServer.Notification, fun(self: spellwand.Client, params: table)>
-Client._server_notification_handlers = {
-  [ms.initialized] = function(self, _params)
-    self:_server_setup_augroup()
-  end,
+---Initialize notification handlers table (Server-side)
+function Client:_init_notification_handlers()
+  self._server_notification_handlers = {
+    [ms.initialized] = function(_params)
+      self:_server_setup_augroup()
+    end,
 
-  [ms.textDocument_didOpen] = function(self, params)
-    local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-    self:_server_publish_diagnostics(bufnr)
-  end,
+    [ms.textDocument_didOpen] = function(params)
+      local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+      self:_server_publish_diagnostics(bufnr)
+    end,
 
-  [ms.textDocument_didChange] = function(self, params)
-    local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-    local mode = vim.api.nvim_get_mode().mode
-    if mode:match("^i") or mode:match("^R") then
-      self._pending_refresh[bufnr] = true
-      return
-    end
-    self:_server_publish_diagnostics(bufnr)
-  end,
+    [ms.textDocument_didChange] = function(params)
+      local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+      local mode = vim.api.nvim_get_mode().mode
+      if mode:match("^i") or mode:match("^R") then
+        self._pending_refresh[bufnr] = true
+        return
+      end
+      self:_server_publish_diagnostics(bufnr)
+    end,
 
-  [ms.textDocument_didSave] = function(_self, _params)
-    -- noop, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
-  end,
+    [ms.textDocument_didSave] = function(_params)
+      -- noop, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
+    end,
 
-  [ms.textDocument_didClose] = function(self, params)
-    -- clear stale diagnostics, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
-    local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-    self._pending_refresh[bufnr] = nil
-    self:_server_publish_diagnostics(bufnr, {})
-  end,
+    [ms.textDocument_didClose] = function(params)
+      -- clear stale diagnostics, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
+      local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+      self._pending_refresh[bufnr] = nil
+      self:_server_publish_diagnostics(bufnr, {})
+    end,
 
-  [ms.workspace_didChangeConfiguration] = function(self, params)
-    if params.settings and params.settings.spellwand then
-      self.config = vim.tbl_deep_extend("force", self.config, params.settings.spellwand)
-      self:_server_refresh_all_diagnostics()
-    end
-  end,
+    [ms.workspace_didChangeConfiguration] = function(params)
+      if params.settings and params.settings.spellwand then
+        self.config = vim.tbl_deep_extend("force", self.config, params.settings.spellwand)
+        self:_server_refresh_all_diagnostics()
+      end
+    end,
 
-  [ms.exit] = function(self, _params)
-    -- Called after successful shutdown response during normal client stop
-    self:_server_terminate()
-  end,
-}
+    [ms.exit] = function(_params)
+      -- Called after successful shutdown response during normal client stop
+      self:_server_terminate()
+    end,
+  }
+end
 
 ---Handle LSP notifications using table-driven dispatch (Client-side dispatcher)
 ---@param method vim.lsp.protocol.Method.ClientToServer.Notification
@@ -466,7 +469,7 @@ Client._server_notification_handlers = {
 function Client:_client_handle_notification(method, params)
   local handler = self._server_notification_handlers[method]
   if handler then
-    handler(self, params)
+    handler(params)
   end
 end
 
