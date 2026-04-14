@@ -289,6 +289,25 @@ spellwand works with native spell keybindings:
 - `2zg` - Add word to second spellfile (native)
 - `zw` - Mark word as wrong (native)
 
+If you add or remove words via native commands (`zg`, `zw`, etc.) or an external editor, spellwand won't automatically notice the spellfile change. You can manually refresh diagnostics:
+
+```vim
+" Refresh current buffer
+:SpellwandRefresh
+
+" Refresh all attached buffers
+:SpellwandRefresh!
+```
+
+Or wrap native mappings to refresh automatically:
+
+```lua
+vim.keymap.set("n", "zg", "zg<cmd>SpellwandRefresh!<cr>", { remap = false })
+vim.keymap.set("n", "zw", "zw<cmd>SpellwandRefresh!<cr>", { remap = false })
+```
+
+Use `SpellwandRefresh!` to refresh all attached buffers (recommended for `zg`/`zw` since the spellfile is shared), or plain `SpellwandRefresh` to refresh only the current buffer.
+
 ### Code Actions
 
 When your cursor is on a misspelled word, use `gra` (or `:lua vim.lsp.buf.code_action()`):
