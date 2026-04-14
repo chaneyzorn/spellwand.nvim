@@ -160,7 +160,7 @@ function Client:_init_notification_handlers()
         self._pending_refresh[bufnr] = true
         return
       end
-      self:_server_publish_diagnostics(bufnr)
+      self:_server_debounced_publish_diagnostics(bufnr)
     end,
 
     [ms.textDocument_didSave] = function(_params)
@@ -211,25 +211,34 @@ function Client:_server_get_capabilities()
   }
 end
 
----Setup augroup for InsertLeave refresh (Server-side)
+---Setup augroup for InsertEnter/InsertLeave refresh (Server-side)
 function Client:_server_setup_augroup()
   self._augroup = vim.api.nvim_create_augroup("spellwand_" .. tostring(self), { clear = true })
-  vim.api.nvim_create_autocmd("InsertLeave", {
+  vim.api.nvim_create_autocmd("InsertEnter", {
     group = self._augroup,
-    callback = function()
-      self:_server_flush_pending_refresh()
+    callback = function(args)
+      local bufnr = args.buf
+      self._pending_refresh[bufnr] = true
+      if self._debounce_timers[bufnr] then
+        vim.fn.timer_stop(self._debounce_timers[bufnr])
+        self._debounce_timers[bufnr] = nil
+      end
+      self:_server_publish_diagnostics(bufnr, {})
     end,
   })
-end
-
----Flush pending diagnostics after leaving insert mode (Server-side)
-function Client:_server_flush_pending_refresh()
-  for bufnr, _ in pairs(self._pending_refresh) do
-    if vim.api.nvim_buf_is_valid(bufnr) then
-      self:_server_publish_diagnostics(bufnr)
-    end
-  end
-  self._pending_refresh = {}
+  vim.api.nvim_create_autocmd("InsertLeave", {
+    group = self._augroup,
+    callback = function(args)
+      local bufnr = args.buf
+      self._pending_refresh[bufnr] = true
+      for pending_bufnr, _ in pairs(self._pending_refresh) do
+        if vim.api.nvim_buf_is_valid(pending_bufnr) then
+          self:_server_publish_diagnostics(pending_bufnr)
+        end
+      end
+      self._pending_refresh = {}
+    end,
+  })
 end
 
 ---Terminate the server and trigger the on_exit callback (Server-side).
@@ -322,32 +331,10 @@ function Client:_server_get_diagnostics(bufnr)
   return diagnostics
 end
 
----Publish diagnostics for a buffer (Server-side)
----Uses dispatchers.notification to trigger Neovim's standard diagnostic flow.
----When diagnostics are not provided explicitly, computation is debounced.
+---Debounced publish for didChange in normal mode.
+---Cancels any pending timer and schedules a new one.
 ---@param bufnr integer
----@param diagnostics lsp.Diagnostic[]? Optional diagnostics to publish (defaults to computed)
-function Client:_server_publish_diagnostics(bufnr, diagnostics)
-  -- Explicit diagnostics (e.g. clearing on didClose) bypass debounce
-  if diagnostics ~= nil then
-    if self._debounce_timers[bufnr] then
-      vim.fn.timer_stop(self._debounce_timers[bufnr])
-      self._debounce_timers[bufnr] = nil
-    end
-    vim.schedule(function()
-      if not vim.api.nvim_buf_is_valid(bufnr) then
-        return
-      end
-      local uri = vim.uri_from_bufnr(bufnr)
-      ---@diagnostic disable-next-line: param-type-mismatch
-      self._dispatchers.notification(ms.textDocument_publishDiagnostics, {
-        uri = uri,
-        diagnostics = diagnostics,
-      })
-    end)
-    return
-  end
-
+function Client:_server_debounced_publish_diagnostics(bufnr)
   if self._debounce_timers[bufnr] then
     vim.fn.timer_stop(self._debounce_timers[bufnr])
   end
@@ -356,18 +343,31 @@ function Client:_server_publish_diagnostics(bufnr, diagnostics)
     self.config.debounce_ms or 300,
     vim.schedule_wrap(function()
       self._debounce_timers[bufnr] = nil
-      if self._closing or not vim.api.nvim_buf_is_valid(bufnr) then
-        return
-      end
-      diagnostics = self:_server_get_diagnostics(bufnr)
-      local uri = vim.uri_from_bufnr(bufnr)
-      ---@diagnostic disable-next-line: param-type-mismatch
-      self._dispatchers.notification(ms.textDocument_publishDiagnostics, {
-        uri = uri,
-        diagnostics = diagnostics,
-      })
+      self:_server_publish_diagnostics(bufnr)
     end)
   )
+end
+
+---Publish diagnostics for a buffer (Server-side)
+---Uses dispatchers.notification to trigger Neovim's standard diagnostic flow.
+---This is always immediate; callers that need debounce should use _server_debounced_publish_diagnostics.
+---@param bufnr integer
+---@param diagnostics lsp.Diagnostic[]? Optional diagnostics to publish (defaults to computed)
+function Client:_server_publish_diagnostics(bufnr, diagnostics)
+  vim.schedule(function()
+    if self._closing or not vim.api.nvim_buf_is_valid(bufnr) then
+      return
+    end
+
+    diagnostics = diagnostics or self:_server_get_diagnostics(bufnr)
+    local uri = vim.uri_from_bufnr(bufnr)
+
+    ---@diagnostic disable-next-line: param-type-mismatch
+    self._dispatchers.notification(ms.textDocument_publishDiagnostics, {
+      uri = uri,
+      diagnostics = diagnostics,
+    })
+  end)
 end
 
 ---Re-publish diagnostics for all attached buffers (Server-side)
