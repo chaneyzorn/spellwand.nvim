@@ -44,10 +44,12 @@ end
 ---@class spellwand.Client
 ---@field private _dispatchers vim.lsp.rpc.Dispatchers Dispatchers for server→client communication
 ---@field config spellwand.LspConfig Client-specific configuration
----@field private _commands table<string, fun(...): any> Built-in commands for code actions
 ---@field private _closing boolean Whether the client is closing
----@field private _augroup integer? Augroup ID for InsertLeave autocmd
 ---@field private _pending_refresh table<integer, boolean> Buffers pending diagnostic refresh after InsertLeave
+---@field private _augroup integer? Augroup ID for InsertLeave autocmd
+---@field private _commands table<string, fun(...): any> Built-in commands for code actions
+---@field private _server_request_handlers table<vim.lsp.protocol.Method.ClientToServer.Request, fun(params: table): any, lsp.ResponseError?>
+---@field private _server_notification_handlers table<vim.lsp.protocol.Method.ClientToServer.Notification, fun(params: table)>
 local Client = {}
 Client.__index = Client
 
@@ -59,12 +61,126 @@ function Client.new(dispatchers, config)
   local self = setmetatable({}, Client)
   self._dispatchers = dispatchers
   self._closing = false
+  self._pending_refresh = {}
   self.config = vim.deepcopy(config or default_config)
   self:_init_commands()
-  self._pending_refresh = {}
   self:_init_request_handlers()
   self:_init_notification_handlers()
   return self
+end
+
+---Initialize built-in commands table (Server-side)
+function Client:_init_commands()
+  self._commands = {
+    ["spellwand.addToSpellfile"] = function(bufnr, spellfile_index, word)
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.cmd(spellfile_index .. "spellgood " .. word)
+      end)
+      self:_server_refresh_all_diagnostics()
+    end,
+    ["spellwand.addAllToSpellfile"] = function(bufnr, spellfile_index)
+      local spell_errors = self:_server_get_spell_words(bufnr)
+      local seen = {}
+      local words_to_add = {}
+      for _, err in ipairs(spell_errors) do
+        if not seen[err.word] then
+          seen[err.word] = true
+          table.insert(words_to_add, err.word)
+        end
+      end
+      vim.api.nvim_buf_call(bufnr, function()
+        for _, word in ipairs(words_to_add) do
+          vim.cmd(spellfile_index .. "spellgood " .. word)
+        end
+      end)
+      self:_server_refresh_all_diagnostics()
+    end,
+    ["spellwand.fixTypo"] = function(bufnr, index)
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.api.nvim_feedkeys(index .. "z=", "n", false)
+      end)
+    end,
+  }
+end
+
+---Initialize request handlers table (Server-side)
+function Client:_init_request_handlers()
+  self._server_request_handlers = {
+    [ms.initialize] = function(params)
+      local init_settings = params.initializationOptions and params.initializationOptions.settings
+      if init_settings and init_settings.spellwand then
+        self.config = vim.tbl_deep_extend("force", default_config, init_settings.spellwand)
+      end
+      return {
+        capabilities = self:_server_get_capabilities(),
+        serverInfo = {
+          name = "spellwand",
+          version = "0.1.0",
+        },
+      },
+        nil
+    end,
+
+    [ms.shutdown] = function(_params)
+      self.config = vim.deepcopy(default_config)
+      return nil, nil
+    end,
+
+    [ms.textDocument_codeAction] = function(params)
+      return self:_server_handle_code_action(params), nil
+    end,
+
+    [ms.workspace_executeCommand] = function(params)
+      return nil, self:_server_handle_execute_command(params)
+    end,
+  }
+end
+
+---Initialize notification handlers table (Server-side)
+function Client:_init_notification_handlers()
+  self._server_notification_handlers = {
+    [ms.initialized] = function(_params)
+      self:_server_setup_augroup()
+    end,
+
+    [ms.textDocument_didOpen] = function(params)
+      local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+      self:_server_publish_diagnostics(bufnr)
+    end,
+
+    [ms.textDocument_didChange] = function(params)
+      local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+      local mode = vim.api.nvim_get_mode().mode
+      if mode:match("^i") or mode:match("^R") then
+        self._pending_refresh[bufnr] = true
+        return
+      end
+      self:_server_publish_diagnostics(bufnr)
+    end,
+
+    [ms.textDocument_didSave] = function(_params)
+      -- noop, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
+    end,
+
+    [ms.textDocument_didClose] = function(params)
+      -- clear stale diagnostics, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
+      local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+      self._pending_refresh[bufnr] = nil
+      self:_server_publish_diagnostics(bufnr, {})
+    end,
+
+    [ms.workspace_didChangeConfiguration] = function(params)
+      if params.settings and params.settings.spellwand then
+        self.config = vim.tbl_deep_extend("force", self.config, params.settings.spellwand)
+        self:_server_refresh_all_diagnostics()
+      end
+    end,
+
+    [ms.exit] = function(_params)
+      -- Called after successful shutdown response during normal client stop
+      self:_server_terminate()
+    end,
+  }
 end
 
 ---Get server capabilities (Server-side)
@@ -84,6 +200,46 @@ function Client:_server_get_capabilities()
       configuration = true,
     },
   }
+end
+
+---Setup augroup for InsertLeave refresh (Server-side)
+function Client:_server_setup_augroup()
+  self._augroup = vim.api.nvim_create_augroup("spellwand_" .. tostring(self), { clear = true })
+  vim.api.nvim_create_autocmd("InsertLeave", {
+    group = self._augroup,
+    callback = function()
+      self:_server_flush_pending_refresh()
+    end,
+  })
+end
+
+---Flush pending diagnostics after leaving insert mode (Server-side)
+function Client:_server_flush_pending_refresh()
+  for bufnr, _ in pairs(self._pending_refresh) do
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      self:_server_publish_diagnostics(bufnr)
+    end
+  end
+  self._pending_refresh = {}
+end
+
+---Terminate the server and trigger the on_exit callback (Server-side).
+---
+---External LSP servers rely on vim.system to trigger on_exit when the process
+---exits. For in-process servers, we must manually trigger it:
+---  - Normal exit: via the 'exit' notification handler
+---  - Force exit: via the terminate() RPC interface
+function Client:_server_terminate()
+  if self._closing then
+    return
+  end
+  self._closing = true
+  if self._augroup then
+    vim.api.nvim_del_augroup_by_id(self._augroup)
+    self._augroup = nil
+  end
+  self._pending_refresh = {}
+  self._dispatchers.on_exit(0, 0)
 end
 
 ---Get processed spell errors for a buffer (Server-side)
@@ -184,80 +340,6 @@ function Client:_server_refresh_all_diagnostics()
       end
     end
   end
-end
-
----Setup augroup for InsertLeave refresh (Server-side)
-function Client:_server_setup_augroup()
-  self._augroup = vim.api.nvim_create_augroup("spellwand_" .. tostring(self), { clear = true })
-  vim.api.nvim_create_autocmd("InsertLeave", {
-    group = self._augroup,
-    callback = function()
-      self:_server_flush_pending_refresh()
-    end,
-  })
-end
-
----Flush pending diagnostics after leaving insert mode (Server-side)
-function Client:_server_flush_pending_refresh()
-  for bufnr, _ in pairs(self._pending_refresh) do
-    if vim.api.nvim_buf_is_valid(bufnr) then
-      self:_server_publish_diagnostics(bufnr)
-    end
-  end
-  self._pending_refresh = {}
-end
-
----Terminate the server and trigger the on_exit callback (Server-side).
----
----External LSP servers rely on vim.system to trigger on_exit when the process
----exits. For in-process servers, we must manually trigger it:
----  - Normal exit: via the 'exit' notification handler
----  - Force exit: via the terminate() RPC interface
-function Client:_server_terminate()
-  if self._closing then
-    return
-  end
-  self._closing = true
-  if self._augroup then
-    vim.api.nvim_del_augroup_by_id(self._augroup)
-    self._augroup = nil
-  end
-  self._pending_refresh = {}
-  self._dispatchers.on_exit(0, 0)
-end
-
----Initialize built-in commands table (Server-side)
-function Client:_init_commands()
-  self._commands = {
-    ["spellwand.addToSpellfile"] = function(bufnr, spellfile_index, word)
-      vim.api.nvim_buf_call(bufnr, function()
-        vim.cmd(spellfile_index .. "spellgood " .. word)
-      end)
-      self:_server_refresh_all_diagnostics()
-    end,
-    ["spellwand.addAllToSpellfile"] = function(bufnr, spellfile_index)
-      local spell_errors = self:_server_get_spell_words(bufnr)
-      local seen = {}
-      local words_to_add = {}
-      for _, err in ipairs(spell_errors) do
-        if not seen[err.word] then
-          seen[err.word] = true
-          table.insert(words_to_add, err.word)
-        end
-      end
-      vim.api.nvim_buf_call(bufnr, function()
-        for _, word in ipairs(words_to_add) do
-          vim.cmd(spellfile_index .. "spellgood " .. word)
-        end
-      end)
-      self:_server_refresh_all_diagnostics()
-    end,
-    ["spellwand.fixTypo"] = function(bufnr, index)
-      vim.api.nvim_buf_call(bufnr, function()
-        vim.api.nvim_feedkeys(index .. "z=", "n", false)
-      end)
-    end,
-  }
 end
 
 ---Handler for textDocument/codeAction (Server-side)
@@ -376,38 +458,6 @@ function Client:_server_handle_execute_command(params)
   return nil
 end
 
----Initialize request handlers table (Server-side)
-function Client:_init_request_handlers()
-  self._server_request_handlers = {
-    [ms.initialize] = function(params)
-      local init_settings = params.initializationOptions and params.initializationOptions.settings
-      if init_settings and init_settings.spellwand then
-        self.config = vim.tbl_deep_extend("force", default_config, init_settings.spellwand)
-      end
-      return {
-        capabilities = self:_server_get_capabilities(),
-        serverInfo = {
-          name = "spellwand",
-          version = "0.1.0",
-        },
-      }, nil
-    end,
-
-    [ms.shutdown] = function(_params)
-      self.config = vim.deepcopy(default_config)
-      return nil, nil
-    end,
-
-    [ms.textDocument_codeAction] = function(params)
-      return self:_server_handle_code_action(params), nil
-    end,
-
-    [ms.workspace_executeCommand] = function(params)
-      return nil, self:_server_handle_execute_command(params)
-    end,
-  }
-end
-
 ---Handle LSP requests using table-driven dispatch (Client-side dispatcher)
 ---@param method vim.lsp.protocol.Method.ClientToServer.Request
 ---@param params table
@@ -419,53 +469,6 @@ function Client:_client_handle_request(method, params)
     return handler(params)
   end
   return nil, { code = -32601, message = "Method not found: " .. method }
-end
-
----Initialize notification handlers table (Server-side)
-function Client:_init_notification_handlers()
-  self._server_notification_handlers = {
-    [ms.initialized] = function(_params)
-      self:_server_setup_augroup()
-    end,
-
-    [ms.textDocument_didOpen] = function(params)
-      local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-      self:_server_publish_diagnostics(bufnr)
-    end,
-
-    [ms.textDocument_didChange] = function(params)
-      local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-      local mode = vim.api.nvim_get_mode().mode
-      if mode:match("^i") or mode:match("^R") then
-        self._pending_refresh[bufnr] = true
-        return
-      end
-      self:_server_publish_diagnostics(bufnr)
-    end,
-
-    [ms.textDocument_didSave] = function(_params)
-      -- noop, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
-    end,
-
-    [ms.textDocument_didClose] = function(params)
-      -- clear stale diagnostics, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
-      local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
-      self._pending_refresh[bufnr] = nil
-      self:_server_publish_diagnostics(bufnr, {})
-    end,
-
-    [ms.workspace_didChangeConfiguration] = function(params)
-      if params.settings and params.settings.spellwand then
-        self.config = vim.tbl_deep_extend("force", self.config, params.settings.spellwand)
-        self:_server_refresh_all_diagnostics()
-      end
-    end,
-
-    [ms.exit] = function(_params)
-      -- Called after successful shutdown response during normal client stop
-      self:_server_terminate()
-    end,
-  }
 end
 
 ---Handle LSP notifications using table-driven dispatch (Client-side dispatcher)
