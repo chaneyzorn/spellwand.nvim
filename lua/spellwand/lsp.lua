@@ -60,36 +60,7 @@ function Client.new(dispatchers, config)
   self._dispatchers = dispatchers
   self._closing = false
   self.config = vim.deepcopy(config or default_config)
-  self._commands = {
-    ["spellwand.addToSpellfile"] = function(bufnr, spellfile_index, word)
-      vim.api.nvim_buf_call(bufnr, function()
-        vim.cmd(spellfile_index .. "spellgood " .. word)
-      end)
-      self:_server_refresh_all_diagnostics()
-    end,
-    ["spellwand.addAllToSpellfile"] = function(bufnr, spellfile_index)
-      local spell_errors = self:_server_get_spell_words(bufnr)
-      local seen = {}
-      local words_to_add = {}
-      for _, err in ipairs(spell_errors) do
-        if not seen[err.word] then
-          seen[err.word] = true
-          table.insert(words_to_add, err.word)
-        end
-      end
-      vim.api.nvim_buf_call(bufnr, function()
-        for _, word in ipairs(words_to_add) do
-          vim.cmd(spellfile_index .. "spellgood " .. word)
-        end
-      end)
-      self:_server_refresh_all_diagnostics()
-    end,
-    ["spellwand.fixTypo"] = function(bufnr, index)
-      vim.api.nvim_buf_call(bufnr, function()
-        vim.api.nvim_feedkeys(index .. "z=", "n", false)
-      end)
-    end,
-  }
+  self:_init_commands()
   self._pending_refresh = {}
   self:_init_request_handlers()
   self:_init_notification_handlers()
@@ -253,6 +224,40 @@ function Client:_server_terminate()
   end
   self._pending_refresh = {}
   self._dispatchers.on_exit(0, 0)
+end
+
+---Initialize built-in commands table (Server-side)
+function Client:_init_commands()
+  self._commands = {
+    ["spellwand.addToSpellfile"] = function(bufnr, spellfile_index, word)
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.cmd(spellfile_index .. "spellgood " .. word)
+      end)
+      self:_server_refresh_all_diagnostics()
+    end,
+    ["spellwand.addAllToSpellfile"] = function(bufnr, spellfile_index)
+      local spell_errors = self:_server_get_spell_words(bufnr)
+      local seen = {}
+      local words_to_add = {}
+      for _, err in ipairs(spell_errors) do
+        if not seen[err.word] then
+          seen[err.word] = true
+          table.insert(words_to_add, err.word)
+        end
+      end
+      vim.api.nvim_buf_call(bufnr, function()
+        for _, word in ipairs(words_to_add) do
+          vim.cmd(spellfile_index .. "spellgood " .. word)
+        end
+      end)
+      self:_server_refresh_all_diagnostics()
+    end,
+    ["spellwand.fixTypo"] = function(bufnr, index)
+      vim.api.nvim_buf_call(bufnr, function()
+        vim.api.nvim_feedkeys(index .. "z=", "n", false)
+      end)
+    end,
+  }
 end
 
 ---Handler for textDocument/codeAction (Server-side)
