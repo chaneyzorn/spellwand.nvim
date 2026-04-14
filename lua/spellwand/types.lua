@@ -12,6 +12,7 @@
 ---@field messages spellwand.Messages Diagnostic message templates
 ---@field suggest_in_diagnostics boolean Show suggestions in diagnostic message
 ---@field num_suggestions integer Number of suggestions in code actions
+---@field debounce_ms integer Debounce delay in milliseconds before re-computing diagnostics
 
 ---Spelling error data structure
 ---@class spellwand.SpellingError

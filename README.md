@@ -2,7 +2,7 @@
 
 An in-process LSP server for Neovim that provides spell checking diagnostics and code actions, leveraging Neovim's built-in spell checking capabilities.
 
-Uses Neovim's built-in spell checking, so results are always consistent with native behavior. Also demonstrates how to implement an in-process LSP server.
+Uses Neovim's built-in spell checking, so results are always consistent with native behavior. Also shares how to implement an in-process LSP server — see [Limitations](#limitations) for its advantages and disadvantages.
 
 - [spellwand.nvim](#spellwandnvim)
   - [Features](#features)
@@ -30,7 +30,6 @@ Uses Neovim's built-in spell checking, so results are always consistent with nat
 - Spellfile support - works with Neovim's `spellfile` option for multiple dictionaries
 - Fast and lightweight - direct access to Neovim's spell state, no RPC overhead
 - Customizable processing - users can define `cond` and `preprocess` functions to customize spell error handling
-- Pure LSP protocol - uses standard LSP methods without explicit Vim autocmds
 
 ## Installation
 
@@ -98,16 +97,6 @@ Then just enable:
 vim.lsp.enable("spellwand")
 ```
 
-To adjust the debounce time for diagnostic updates (Neovim LSP client built-in option):
-
-```lua
-vim.lsp.config("spellwand", {
-  flags = {
-    debounce_text_changes = 300,  -- milliseconds, default is 150
-  },
-})
-```
-
 ### Available Options
 
 All configuration options and their defaults (passed via `settings.spellwand`):
@@ -152,6 +141,9 @@ vim.lsp.config("spellwand", {
 
       ---@type integer Number of suggestions in code actions
       num_suggestions = 3,
+
+      ---@type integer Debounce delay in milliseconds before re-computing diagnostics
+      debounce_ms = 300,
     }
   }
 })
@@ -162,6 +154,35 @@ See `lua/spellwand/types.lua` for complete type definitions.
 Since spellwand runs in-process, it is possible to use runtime Lua functions for `cond` and `preprocess` — no JSON serialization involved.
 
 The `treesitter` strategy only checks nodes captured as `@spell` (typically comments and string literals), defined in query files like `queries/lua/highlights.scm`. Use the `full` strategy to check all buffer text. You may also want to configure `:spelloptions` (e.g., `noplainbuffer`, automatically set by Neovim when Treesitter is active) to keep spell highlighting consistent across strategies.
+
+### Debounce
+
+There are two independent debounce layers you can tune:
+
+**Client-side debounce** (`flags.debounce_text_changes`):
+
+- Controls how often Neovim's LSP client sends `textDocument/didChange` to spellwand.
+- Default is `150` milliseconds (Neovim built-in default).
+- Increase this value if you want fewer change notifications sent to the server.
+
+**Server-side debounce** (`settings.spellwand.debounce_ms`):
+
+- Controls how long spellwand waits after receiving a change before re-computing diagnostics.
+- Default is `300` milliseconds.
+- During insert/replace mode, changes are additionally deferred until `InsertLeave`, and then the server-side debounce applies.
+
+```lua
+vim.lsp.config("spellwand", {
+  flags = {
+    debounce_text_changes = 150,  -- client-side: throttle didChange notifications
+  },
+  settings = {
+    spellwand = {
+      debounce_ms = 300,  -- server-side: delay before re-computing diagnostics
+    }
+  }
+})
+```
 
 ### Customization Examples
 
@@ -279,7 +300,22 @@ Available actions:
 
 ## Limitations
 
-Unlike external LSP servers that run asynchronously in a separate process, spellwand runs in-process and performs spell checking synchronously. This means large-scale spell checking (files with thousands of spelling errors) may cause temporary TUI lag. Use the `max_errors` option to set an appropriate limit.
+As an in-process LSP server, spellwand has different trade-offs compared to external servers that run in a separate process:
+
+**Advantages**:
+
+- Direct access to Neovim's internal state and APIs (e.g. `vim.spell`, `vim.fn.spellsuggest()`, buffer-local `spellfile` and `spelllang`) without RPC serialization overhead.
+- Seamless integration with native Vim features and runtime Lua functions.
+
+**Disadvantages**:
+
+- Spell checking runs synchronously on Neovim's main thread. Large buffers or files with thousands of spelling errors may cause temporary TUI lag. Use the `max_errors`, `debounce_ms`, and `cond` options to keep performance acceptable.
+- The server must implement the `vim.lsp.rpc.PublicClient` interface correctly and explicitly trigger `on_exit`, because Neovim's `vim.system` callback mechanism (used for external LSP servers to detect process exit) does not apply to in-process servers. Autocmds and timers are additional performance optimizations that also need careful cleanup.
+
+**Why is native Vim spell checking fast while spellwand can lag?**
+Native Vim only spell-checks the *visible* window range during screen rendering. spellwand, as an LSP server, must scan the *entire buffer* to produce a complete diagnostic list, which is inherently heavier work.
+
+A future `vim.lsp.server` API may simplify the boilerplate, but it won't remove the fundamental bottleneck of running on the main thread. Offloading to `uv` threads is possible, yet becomes awkward once you need direct access to Neovim's internal state — at which point an external LSP server is the cleaner choice.
 
 ## Alternative Spell Checking LSP Servers
 

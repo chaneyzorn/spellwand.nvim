@@ -28,6 +28,7 @@ local default_config = {
   },
   suggest_in_diagnostics = false,
   num_suggestions = 3,
+  debounce_ms = 300,
 }
 
 ---Parse spellfile option to get list of spellfile paths
@@ -47,6 +48,7 @@ end
 ---@field private _closing boolean Whether the client is closing
 ---@field private _pending_refresh table<integer, boolean> Buffers pending diagnostic refresh after InsertLeave
 ---@field private _augroup integer? Augroup ID for InsertLeave autocmd
+---@field private _debounce_timers table<integer, integer> Timer IDs for debounced diagnostic refreshes
 ---@field private _commands table<string, fun(...): any> Built-in commands for code actions
 ---@field private _server_request_handlers table<vim.lsp.protocol.Method.ClientToServer.Request, fun(params: table): any, lsp.ResponseError?>
 ---@field private _server_notification_handlers table<vim.lsp.protocol.Method.ClientToServer.Notification, fun(params: table)>
@@ -62,6 +64,7 @@ function Client.new(dispatchers, config)
   self._dispatchers = dispatchers
   self._closing = false
   self._pending_refresh = {}
+  self._debounce_timers = {}
   self.config = vim.deepcopy(config or default_config)
   self:_init_commands()
   self:_init_request_handlers()
@@ -166,6 +169,10 @@ function Client:_init_notification_handlers()
       -- clear stale diagnostics, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
       local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
       self._pending_refresh[bufnr] = nil
+      if self._debounce_timers[bufnr] then
+        vim.fn.timer_stop(self._debounce_timers[bufnr])
+        self._debounce_timers[bufnr] = nil
+      end
       self:_server_publish_diagnostics(bufnr, {})
     end,
 
@@ -239,6 +246,10 @@ function Client:_server_terminate()
     self._augroup = nil
   end
   self._pending_refresh = {}
+  for _, timer_id in pairs(self._debounce_timers) do
+    vim.fn.timer_stop(timer_id)
+  end
+  self._debounce_timers = {}
   self._dispatchers.on_exit(0, 0)
 end
 
@@ -310,22 +321,51 @@ function Client:_server_get_diagnostics(bufnr)
 end
 
 ---Publish diagnostics for a buffer (Server-side)
----Uses dispatchers.notification to trigger Neovim's standard diagnostic flow
+---Uses dispatchers.notification to trigger Neovim's standard diagnostic flow.
+---When diagnostics are not provided explicitly, computation is debounced.
 ---@param bufnr integer
 ---@param diagnostics lsp.Diagnostic[]? Optional diagnostics to publish (defaults to computed)
 function Client:_server_publish_diagnostics(bufnr, diagnostics)
-  if not vim.api.nvim_buf_is_valid(bufnr) then
+  -- Explicit diagnostics (e.g. clearing on didClose) bypass debounce
+  if diagnostics ~= nil then
+    if self._debounce_timers[bufnr] then
+      vim.fn.timer_stop(self._debounce_timers[bufnr])
+      self._debounce_timers[bufnr] = nil
+    end
+    vim.schedule(function()
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+      end
+      local uri = vim.uri_from_bufnr(bufnr)
+      ---@diagnostic disable-next-line: param-type-mismatch
+      self._dispatchers.notification(ms.textDocument_publishDiagnostics, {
+        uri = uri,
+        diagnostics = diagnostics,
+      })
+    end)
     return
   end
 
-  diagnostics = diagnostics or self:_server_get_diagnostics(bufnr)
-  local uri = vim.uri_from_bufnr(bufnr)
+  if self._debounce_timers[bufnr] then
+    vim.fn.timer_stop(self._debounce_timers[bufnr])
+  end
 
-  ---@diagnostic disable-next-line: param-type-mismatch
-  self._dispatchers.notification(ms.textDocument_publishDiagnostics, {
-    uri = uri,
-    diagnostics = diagnostics,
-  })
+  self._debounce_timers[bufnr] = vim.fn.timer_start(
+    self.config.debounce_ms or 300,
+    vim.schedule_wrap(function()
+      self._debounce_timers[bufnr] = nil
+      if self._closing or not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+      end
+      diagnostics = self:_server_get_diagnostics(bufnr)
+      local uri = vim.uri_from_bufnr(bufnr)
+      ---@diagnostic disable-next-line: param-type-mismatch
+      self._dispatchers.notification(ms.textDocument_publishDiagnostics, {
+        uri = uri,
+        diagnostics = diagnostics,
+      })
+    end)
+  )
 end
 
 ---Re-publish diagnostics for all attached buffers (Server-side)
