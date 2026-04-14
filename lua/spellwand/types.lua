@@ -10,8 +10,8 @@
 ---@field preprocess fun(bufnr: integer, spell_errors: spellwand.SpellingError[]): spellwand.SpellingError[] Preprocess spell errors before converting to diagnostics
 ---@field severity table<string, integer> Severity levels for different error types
 ---@field messages spellwand.Messages Diagnostic message templates
----@field suggest_in_diagnostics boolean Show suggestions in diagnostic message
----@field num_suggestions integer Number of suggestions in code actions
+---@field num_suggestions_in_diagnostics integer Number of spelling suggestions shown in diagnostic messages (0 to disable)
+---@field num_suggestions_in_code_action integer Number of spelling suggestions offered in code actions
 ---@field debounce_ms integer Debounce delay in milliseconds before re-computing diagnostics
 
 ---Spelling error data structure

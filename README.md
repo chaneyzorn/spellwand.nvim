@@ -136,11 +136,11 @@ vim.lsp.config("spellwand", {
         SuggestPrefix = "did you mean: %s",
       },
 
-      ---@type boolean Show suggestions in diagnostic message
-      suggest_in_diagnostics = false,
+      ---@type integer Number of spelling suggestions shown in diagnostic messages (0 to disable)
+      num_suggestions_in_diagnostics = 0,
 
-      ---@type integer Number of suggestions in code actions
-      num_suggestions = 3,
+      ---@type integer Number of spelling suggestions offered in code actions
+      num_suggestions_in_code_action = 3,
 
       ---@type integer Debounce delay in milliseconds before re-computing diagnostics
       debounce_ms = 300,

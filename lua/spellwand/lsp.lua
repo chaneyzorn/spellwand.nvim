@@ -26,8 +26,8 @@ local default_config = {
     SpellRare = 'Rare word: "%s"',
     SuggestPrefix = "did you mean: %s",
   },
-  suggest_in_diagnostics = false,
-  num_suggestions = 3,
+  num_suggestions_in_diagnostics = 0,
+  num_suggestions_in_code_action = 3,
   debounce_ms = 300,
 }
 
@@ -312,9 +312,9 @@ function Client:_server_get_diagnostics(bufnr)
     local severity = self.config.severity[err.type]
     if severity then
       local suggestions
-      if self.config.suggest_in_diagnostics and self.config.num_suggestions > 0 then
+      if self.config.num_suggestions_in_diagnostics > 0 then
         vim.api.nvim_buf_call(bufnr, function()
-          suggestions = vim.fn.spellsuggest(err.word, self.config.num_suggestions)
+          suggestions = vim.fn.spellsuggest(err.word, self.config.num_suggestions_in_diagnostics)
         end)
       end
       local message = self:_server_format_message(err.word, err.type, suggestions)
@@ -428,7 +428,7 @@ function Client:_server_handle_code_action(params)
 
     local suggestions
     vim.api.nvim_buf_call(bufnr, function()
-      suggestions = vim.fn.spellsuggest(badword, self.config.num_suggestions)
+      suggestions = vim.fn.spellsuggest(badword, self.config.num_suggestions_in_code_action)
     end)
     for idx, sug in ipairs(suggestions or {}) do
       table.insert(actions, {
