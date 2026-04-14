@@ -46,6 +46,8 @@ end
 ---@field config spellwand.LspConfig Client-specific configuration
 ---@field private _commands table<string, fun(...): any> Built-in commands for code actions
 ---@field private _closing boolean Whether the client is closing
+---@field private _augroup integer? Augroup ID for InsertLeave autocmd
+---@field private _pending_refresh table<integer, boolean> Buffers pending diagnostic refresh after InsertLeave
 local Client = {}
 Client.__index = Client
 
@@ -88,6 +90,7 @@ function Client.new(dispatchers, config)
       end)
     end,
   }
+  self._pending_refresh = {}
   return self
 end
 
@@ -210,6 +213,27 @@ function Client:_server_refresh_all_diagnostics()
   end
 end
 
+---Setup augroup for InsertLeave refresh (Server-side)
+function Client:_server_setup_augroup()
+  self._augroup = vim.api.nvim_create_augroup("spellwand_" .. tostring(self), { clear = true })
+  vim.api.nvim_create_autocmd("InsertLeave", {
+    group = self._augroup,
+    callback = function()
+      self:_server_flush_pending_refresh()
+    end,
+  })
+end
+
+---Flush pending diagnostics after leaving insert mode (Server-side)
+function Client:_server_flush_pending_refresh()
+  for bufnr, _ in pairs(self._pending_refresh) do
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      self:_server_publish_diagnostics(bufnr)
+    end
+  end
+  self._pending_refresh = {}
+end
+
 ---Terminate the server and trigger the on_exit callback (Server-side).
 ---
 ---External LSP servers rely on vim.system to trigger on_exit when the process
@@ -221,7 +245,11 @@ function Client:_server_terminate()
     return
   end
   self._closing = true
-  print("[spellwand] _server_terminate: server closing")
+  if self._augroup then
+    vim.api.nvim_del_augroup_by_id(self._augroup)
+    self._augroup = nil
+  end
+  self._pending_refresh = {}
   self._dispatchers.on_exit(0, 0)
 end
 
@@ -389,7 +417,9 @@ end
 ---Notification handlers table (Server-side)
 ---@type table<vim.lsp.protocol.Method.ClientToServer.Notification, fun(self: spellwand.Client, params: table)>
 Client._server_notification_handlers = {
-  [ms.initialized] = function(_self, _params) end,
+  [ms.initialized] = function(self, _params)
+    self:_server_setup_augroup()
+  end,
 
   [ms.textDocument_didOpen] = function(self, params)
     local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
@@ -398,6 +428,11 @@ Client._server_notification_handlers = {
 
   [ms.textDocument_didChange] = function(self, params)
     local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+    local mode = vim.api.nvim_get_mode().mode
+    if mode:match("^i") or mode:match("^R") then
+      self._pending_refresh[bufnr] = true
+      return
+    end
     self:_server_publish_diagnostics(bufnr)
   end,
 
@@ -408,6 +443,7 @@ Client._server_notification_handlers = {
   [ms.textDocument_didClose] = function(self, params)
     -- clear stale diagnostics, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
     local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+    self._pending_refresh[bufnr] = nil
     self:_server_publish_diagnostics(bufnr, {})
   end,
 
