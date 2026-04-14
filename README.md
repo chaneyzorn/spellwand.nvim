@@ -4,6 +4,8 @@ An in-process LSP server for Neovim that provides spell checking diagnostics and
 
 Uses Neovim's built-in spell checking, so results are always consistent with native behavior. Also shares how to implement an in-process LSP server — see [Limitations](#limitations) for its advantages and disadvantages.
 
+![Screenshot showing spellwand.nvim diagnostics in Neovim](https://github.com/user-attachments/assets/7df42567-737e-4c3e-891b-9941635ecf0f)
+
 - [spellwand.nvim](#spellwandnvim)
   - [Features](#features)
   - [Installation](#installation)
