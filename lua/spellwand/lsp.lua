@@ -49,6 +49,7 @@ end
 ---@field private _pending_refresh table<integer, boolean> Buffers pending diagnostic refresh after InsertLeave
 ---@field private _augroup integer? Augroup ID for InsertLeave autocmd
 ---@field private _debounce_timers table<integer, integer> Timer IDs for debounced diagnostic refreshes
+---@field private _request_id integer Request ID counter for the RPC interface
 ---@field private _commands table<string, fun(...): any> Built-in commands for code actions
 ---@field private _server_request_handlers table<vim.lsp.protocol.Method.ClientToServer.Request, fun(params: table): any, lsp.ResponseError?>
 ---@field private _server_notification_handlers table<vim.lsp.protocol.Method.ClientToServer.Notification, fun(params: table)>
@@ -65,6 +66,7 @@ function Client.new(dispatchers, config)
   self._closing = false
   self._pending_refresh = {}
   self._debounce_timers = {}
+  self._request_id = 0
   self.config = vim.deepcopy(config or default_config)
   self:_init_commands()
   self:_init_request_handlers()
@@ -525,12 +527,17 @@ end
 ---@return vim.lsp.rpc.PublicClient
 function Client:_create_rpc_interface()
   return {
-    request = function(method, params, callback, _)
+    request = function(method, params, callback, notify_reply_callback)
+      self._request_id = self._request_id + 1
+      local id = self._request_id
       local result, err = self:_client_handle_request(method, params)
       if callback then
-        callback(err, result)
+        callback(err, result, id)
       end
-      return true, 1
+      if notify_reply_callback then
+        notify_reply_callback(id)
+      end
+      return true, id
     end,
 
     notify = function(method, params)
