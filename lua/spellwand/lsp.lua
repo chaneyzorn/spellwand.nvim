@@ -50,6 +50,7 @@ end
 ---@field private _augroup integer? Augroup ID for InsertLeave autocmd
 ---@field private _debounce_timers table<integer, integer> Timer IDs for debounced diagnostic refreshes
 ---@field private _request_id integer Request ID counter for the RPC interface
+---@field private _attached_buffers table<integer, true> Buffers attached to this client instance
 ---@field private _commands table<string, fun(...): any> Built-in commands for code actions
 ---@field private _server_request_handlers table<vim.lsp.protocol.Method.ClientToServer.Request, fun(params: table): any, lsp.ResponseError?>
 ---@field private _server_notification_handlers table<vim.lsp.protocol.Method.ClientToServer.Notification, fun(params: table)>
@@ -67,6 +68,7 @@ function Client.new(dispatchers, config)
   self._pending_refresh = {}
   self._debounce_timers = {}
   self._request_id = 0
+  self._attached_buffers = {}
   self.config = vim.deepcopy(config or default_config)
   self:_init_commands()
   self:_init_request_handlers()
@@ -150,6 +152,7 @@ function Client:_init_notification_handlers()
 
     [ms.textDocument_didOpen] = function(params)
       local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+      self._attached_buffers[bufnr] = true
       self:_server_publish_diagnostics(bufnr)
     end,
 
@@ -170,6 +173,7 @@ function Client:_init_notification_handlers()
     [ms.textDocument_didClose] = function(params)
       -- clear stale diagnostics, refer to https://github.com/tekumara/typos-lsp/blob/main/crates/typos-lsp/src/lsp.rs
       local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
+      self._attached_buffers[bufnr] = nil
       self._pending_refresh[bufnr] = nil
       if self._debounce_timers[bufnr] then
         vim.fn.timer_stop(self._debounce_timers[bufnr])
@@ -372,15 +376,8 @@ end
 
 ---Re-publish diagnostics for all attached buffers (Server-side)
 function Client:_server_refresh_all_diagnostics()
-  local seen = {}
-  local clients = vim.lsp.get_clients({ name = "spellwand" })
-  for _, client in ipairs(clients) do
-    for bufnr, _ in pairs(client.attached_buffers or {}) do
-      if not seen[bufnr] then
-        seen[bufnr] = true
-        self:_server_publish_diagnostics(bufnr)
-      end
-    end
+  for bufnr, _ in pairs(self._attached_buffers) do
+    self:_server_publish_diagnostics(bufnr)
   end
 end
 
