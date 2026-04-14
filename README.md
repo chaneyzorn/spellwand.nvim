@@ -6,7 +6,6 @@ Uses Neovim's built-in spell checking, so results are always consistent with nat
 
 - [spellwand.nvim](#spellwandnvim)
   - [Features](#features)
-  - [Requirements](#requirements)
   - [Installation](#installation)
     - [lazy.nvim](#lazynvim)
     - [vim.pack (Neovim 0.12+)](#vimpack-neovim-012)
@@ -14,6 +13,7 @@ Uses Neovim's built-in spell checking, so results are always consistent with nat
     - [Available Options](#available-options)
     - [Customization Examples](#customization-examples)
   - [Usage](#usage)
+    - [Spell Configuration](#spell-configuration)
     - [Standard LSP Commands](#standard-lsp-commands)
     - [Key Mappings](#key-mappings)
     - [Code Actions](#code-actions)
@@ -32,13 +32,12 @@ Uses Neovim's built-in spell checking, so results are always consistent with nat
 - Customizable processing - users can define `cond` and `preprocess` functions to customize spell error handling
 - Pure LSP protocol - uses standard LSP methods without explicit Vim autocmds
 
-## Requirements
-
-- Neovim 0.12+
-- `spell` option enabled (`:set spell`)
-- Treesitter queries providing `@spell` captures for context-aware checking (falls back to full buffer scan if unavailable)
-
 ## Installation
+
+**Version Compatibility:**
+
+- Neovim 0.11+ for basic LSP functionality (`vim.lsp.config`)
+- Neovim 0.12+ for `:lsp stop` and other LSP management commands
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim)
 
@@ -233,6 +232,15 @@ end
 
 ## Usage
 
+### Spell Configuration
+
+spellwand uses Neovim's built-in `vim.spell.check()` function, which respects your window-local and buffer-local settings:
+
+- **`spell`** - Enables native spell checking, highlighting, and navigation (`]s`/`[s`). spellwand diagnostics work independently of this setting.
+- **`spelllang`** - Language dictionaries to use (e.g., `:set spelllang=en_us,de_de`).
+- **`spellfile`** - Additional word lists. spellwand reads this to determine where to add words.
+- **`spelloptions`** - Additional options like `camel` to accept CamelCase words as correct (e.g., `:set spelloptions+=camel`).
+
 ### Standard LSP Commands
 
 Since spellwand is a standard LSP server, you control it using Neovim's built-in LSP commands:
@@ -241,7 +249,7 @@ Since spellwand is a standard LSP server, you control it using Neovim's built-in
 " Enable spellwand (start the LSP client)
 :lua vim.lsp.enable('spellwand')
 
-" Disable spellwand (stop all spellwand clients)
+" Stop spellwand (stop all spellwand clients)
 :lsp stop spellwand
 
 " Check if spellwand is attached
