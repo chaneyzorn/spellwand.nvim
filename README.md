@@ -108,17 +108,22 @@ vim.lsp.config("spellwand", {
   filetypes = nil,  ---@type string[]? Filetypes to attach to (nil = all filetypes)
   settings = {
     spellwand = {
-      ---@type fun(bufnr: integer): boolean Condition function
+      ---@type fun(bufnr: integer): boolean
+      ---Return false to skip spell checking for this buffer entirely (no diagnostics will be produced)
       cond = function(bufnr) return true end,
 
       ---@type ("treesitter"|"full")[] | fun(bufnr: integer): ("treesitter"|"full")[]
       ---Tries each strategy in order until one succeeds
       strategies = { "treesitter", "full" },
 
-      ---@type integer Maximum errors to return
+      ---@type integer
+      ---Early-return limit to keep performance acceptable on large buffers.
+      ---Once this many spelling errors are found, scanning stops immediately.
       max_errors = 999,
 
       ---@type fun(bufnr: integer, spell_errors: spellwand.SpellingError[]): spellwand.SpellingError[]
+      ---Transform or filter the raw spell errors before they are converted to diagnostics and code actions.
+      ---Use this to ignore short words, deduplicate, or inject custom logic.
       preprocess = function(bufnr, spell_errors) return spell_errors end,
 
       ---@type table<string, integer> Severity mapping
@@ -308,7 +313,7 @@ vim.keymap.set("n", "zg", "zg<cmd>SpellwandRefresh!<cr>", { remap = false })
 vim.keymap.set("n", "zw", "zw<cmd>SpellwandRefresh!<cr>", { remap = false })
 ```
 
-Use `SpellwandRefresh!` to refresh all attached buffers (recommended for `zg`/`zw` since the spellfile is shared), or plain `SpellwandRefresh` to refresh only the current buffer.
+For `zg`/`zw`, `SpellwandRefresh!` is recommended because the spellfile is shared across buffers.
 
 ### Code Actions
 
@@ -335,6 +340,7 @@ As an in-process LSP server, spellwand has different trade-offs compared to exte
 - The server must implement the `vim.lsp.rpc.PublicClient` interface correctly and explicitly trigger `on_exit`, because Neovim's `vim.system` callback mechanism (used for external LSP servers to detect process exit) does not apply to in-process servers. Autocmds and timers are additional performance optimizations that also need careful cleanup.
 
 **Why is native Vim spell checking fast while spellwand can lag?**
+
 Native Vim only spell-checks the *visible* window range during screen rendering. spellwand, as an LSP server, must scan the *entire buffer* to produce a complete diagnostic list, which is inherently heavier work.
 
 A future `vim.lsp.server` API may simplify the boilerplate, but it won't remove the fundamental bottleneck of running on the main thread. Offloading to `uv` threads is possible, yet becomes awkward once you need direct access to Neovim's internal state — at which point an external LSP server is the cleaner choice.
