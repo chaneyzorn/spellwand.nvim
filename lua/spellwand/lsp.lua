@@ -42,27 +42,27 @@ local function get_spellfiles(bufnr)
   return vim.split(spellfile, ",", { plain = true })
 end
 
----@class spellwand.Client
+---@class spellwand.Server
 ---@field private _dispatchers vim.lsp.rpc.Dispatchers Dispatchers for server→client communication
----@field config spellwand.LspConfig Client-specific configuration
----@field private _closing boolean Whether the client is closing
+---@field config spellwand.LspConfig Server-specific configuration
+---@field private _closing boolean Whether the server is closing
 ---@field private _pending_refresh table<integer, boolean> Buffers pending diagnostic refresh after InsertLeave
 ---@field private _augroup integer? Augroup ID for InsertLeave autocmd
 ---@field private _debounce_timers table<integer, integer> Timer IDs for debounced diagnostic refreshes
 ---@field private _request_id integer Request ID counter for the RPC interface
----@field private _attached_buffers table<integer, true> Buffers attached to this client instance
+---@field private _attached_buffers table<integer, true> Buffers attached to this server instance
 ---@field private _commands table<string, fun(...): any> Built-in commands for code actions
 ---@field private _server_request_handlers table<vim.lsp.protocol.Method.ClientToServer.Request, fun(params: table): any, lsp.ResponseError?>
 ---@field private _server_notification_handlers table<vim.lsp.protocol.Method.ClientToServer.Notification, fun(params: table)>
-local Client = {}
-Client.__index = Client
+local Server = {}
+Server.__index = Server
 
----Create a new spellwand Client instance
+---Create a new spellwand Server instance
 ---@param dispatchers vim.lsp.rpc.Dispatchers Dispatchers provided by Neovim
 ---@param config spellwand.LspConfig? Initial configuration
----@return spellwand.Client
-function Client.new(dispatchers, config)
-  local self = setmetatable({}, Client)
+---@return spellwand.Server
+function Server.new(dispatchers, config)
+  local self = setmetatable({}, Server)
   self._dispatchers = dispatchers
   self._closing = false
   self._pending_refresh = {}
@@ -77,7 +77,7 @@ function Client.new(dispatchers, config)
 end
 
 ---Initialize built-in commands table (Server-side)
-function Client:_init_commands()
+function Server:_init_commands()
   self._commands = {
     ["spellwand.addToSpellfile"] = function(bufnr, spellfile_index, word)
       vim.api.nvim_buf_call(bufnr, function()
@@ -111,7 +111,7 @@ function Client:_init_commands()
 end
 
 ---Initialize request handlers table (Server-side)
-function Client:_init_request_handlers()
+function Server:_init_request_handlers()
   self._server_request_handlers = {
     [ms.initialize] = function(params)
       local init_settings = params.initializationOptions and params.initializationOptions.settings
@@ -144,7 +144,7 @@ function Client:_init_request_handlers()
 end
 
 ---Initialize notification handlers table (Server-side)
-function Client:_init_notification_handlers()
+function Server:_init_notification_handlers()
   self._server_notification_handlers = {
     [ms.initialized] = function(_params)
       self:_server_setup_augroup()
@@ -198,7 +198,7 @@ end
 
 ---Get server capabilities (Server-side)
 ---@return lsp.ServerCapabilities
-function Client:_server_get_capabilities()
+function Server:_server_get_capabilities()
   return {
     textDocumentSync = {
       openClose = true,
@@ -216,7 +216,7 @@ function Client:_server_get_capabilities()
 end
 
 ---Setup augroup for InsertEnter/InsertLeave refresh (Server-side)
-function Client:_server_setup_augroup()
+function Server:_server_setup_augroup()
   self._augroup = vim.api.nvim_create_augroup("spellwand_" .. tostring(self), { clear = true })
   vim.api.nvim_create_autocmd("InsertEnter", {
     group = self._augroup,
@@ -251,7 +251,7 @@ end
 ---exits. For in-process servers, we must manually trigger it:
 ---  - Normal exit: via the 'exit' notification handler
 ---  - Force exit: via the terminate() RPC interface
-function Client:_server_terminate()
+function Server:_server_terminate()
   if self._closing then
     return
   end
@@ -271,7 +271,7 @@ end
 ---Get processed spell errors for a buffer (Server-side)
 ---@param bufnr integer
 ---@return spellwand.SpellingError[]
-function Client:_server_get_spell_words(bufnr)
+function Server:_server_get_spell_words(bufnr)
   local spell_errors = require("spellwand.spelling").get_spelling_errors(bufnr, self.config)
   spell_errors = self.config.preprocess(bufnr, spell_errors)
   return spell_errors
@@ -282,7 +282,7 @@ end
 ---@param err_type string Error type (SpellBad, SpellCap, etc.)
 ---@param suggestions string[]? Optional suggestions list
 ---@return string formatted message
-function Client:_server_format_message(word, err_type, suggestions)
+function Server:_server_format_message(word, err_type, suggestions)
   local messages = self.config.messages
   if type(messages) == "function" then
     return messages(word, err_type, suggestions)
@@ -300,7 +300,7 @@ end
 ---Get diagnostics for a buffer (Server-side)
 ---@param bufnr integer
 ---@return lsp.Diagnostic[]
-function Client:_server_get_diagnostics(bufnr)
+function Server:_server_get_diagnostics(bufnr)
   if not self.config.cond(bufnr) then
     return {}
   end
@@ -338,7 +338,7 @@ end
 ---Debounced publish for didChange in normal mode.
 ---Cancels any pending timer and schedules a new one.
 ---@param bufnr integer
-function Client:_server_debounced_publish_diagnostics(bufnr)
+function Server:_server_debounced_publish_diagnostics(bufnr)
   if self._debounce_timers[bufnr] then
     vim.fn.timer_stop(self._debounce_timers[bufnr])
   end
@@ -357,7 +357,7 @@ end
 ---This is always immediate; callers that need debounce should use _server_debounced_publish_diagnostics.
 ---@param bufnr integer
 ---@param diagnostics lsp.Diagnostic[]? Optional diagnostics to publish (defaults to computed)
-function Client:_server_publish_diagnostics(bufnr, diagnostics)
+function Server:_server_publish_diagnostics(bufnr, diagnostics)
   vim.schedule(function()
     if self._closing or not vim.api.nvim_buf_is_valid(bufnr) then
       return
@@ -375,7 +375,7 @@ function Client:_server_publish_diagnostics(bufnr, diagnostics)
 end
 
 ---Re-publish diagnostics for all attached buffers (Server-side)
-function Client:_server_refresh_all_diagnostics()
+function Server:_server_refresh_all_diagnostics()
   for bufnr, _ in pairs(self._attached_buffers) do
     self:_server_publish_diagnostics(bufnr)
   end
@@ -384,7 +384,7 @@ end
 ---Handler for textDocument/codeAction (Server-side)
 ---@param params lsp.CodeActionParams
 ---@return lsp.CodeAction[]
-function Client:_server_handle_code_action(params)
+function Server:_server_handle_code_action(params)
   local bufnr = vim.uri_to_bufnr(params.textDocument.uri)
   local spellfiles = get_spellfiles(bufnr)
   local actions = {}
@@ -477,7 +477,7 @@ end
 ---Handler for workspace/executeCommand (Server-side)
 ---@param params lsp.ExecuteCommandParams
 ---@return lsp.ResponseError? error
-function Client:_server_handle_execute_command(params)
+function Server:_server_handle_execute_command(params)
   local cmd_fn = self._commands[params.command]
   if not cmd_fn then
     return {
@@ -502,7 +502,7 @@ end
 ---@param params table
 ---@return any result
 ---@return lsp.ResponseError? error
-function Client:_client_handle_request(method, params)
+function Server:_client_handle_request(method, params)
   local handler = self._server_request_handlers[method]
   if handler then
     return handler(params)
@@ -513,7 +513,7 @@ end
 ---Handle LSP notifications using table-driven dispatch (Client-side dispatcher)
 ---@param method vim.lsp.protocol.Method.ClientToServer.Notification
 ---@param params table
-function Client:_client_handle_notification(method, params)
+function Server:_client_handle_notification(method, params)
   local handler = self._server_notification_handlers[method]
   if handler then
     handler(params)
@@ -522,7 +522,7 @@ end
 
 ---Create the RPC public client interface (Client-side)
 ---@return vim.lsp.rpc.PublicClient
-function Client:_create_rpc_interface()
+function Server:_create_rpc_interface()
   return {
     request = function(method, params, callback, notify_reply_callback)
       self._request_id = self._request_id + 1
@@ -564,8 +564,8 @@ M.default_config = vim.deepcopy(default_config)
 function M.create_rpc(dispatchers, config)
   local conf = config and config.settings and config.settings.spellwand
   ---@cast conf spellwand.LspConfig
-  local client = Client.new(dispatchers, conf)
-  return client:_create_rpc_interface()
+  local server = Server.new(dispatchers, conf)
+  return server:_create_rpc_interface()
 end
 
 return M
