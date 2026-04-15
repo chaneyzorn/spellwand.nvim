@@ -55,7 +55,7 @@ local function _get_spelling_errors_treesitter(bufnr, opts)
     local col_offset = err[3]
 
     local abs_lnum = start_row + 1
-    local abs_col = start_col + col_offset + 1
+    local abs_col = start_col + col_offset
     local key = abs_lnum .. ":" .. abs_col .. ":" .. word
 
     if seen[key] then
@@ -143,7 +143,7 @@ local function _get_spelling_errors_full(bufnr, opts, start_row, start_col, end_
 
       -- Calculate absolute position
       local abs_lnum = start_row + n
-      local abs_col = (n == 1 and start_col or 0) + col + 1
+      local abs_col = (n == 1 and start_col or 0) + col
       local key = abs_lnum .. ":" .. abs_col .. ":" .. word
 
       if not seen[key] then
