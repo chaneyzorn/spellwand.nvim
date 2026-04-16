@@ -278,8 +278,8 @@ Since spellwand is a standard LSP server, you control it using Neovim's built-in
 " Enable spellwand (start the LSP client)
 :lua vim.lsp.enable('spellwand')
 
-" Stop spellwand (stop all spellwand clients)
-:lsp stop spellwand
+" Disable spellwand (detach from all buffers)
+:lsp disable spellwand
 
 " Check if spellwand is attached
 :checkhealth vim.lsp
