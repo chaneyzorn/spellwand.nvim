@@ -160,7 +160,7 @@ See `lua/spellwand/types.lua` for complete type definitions.
 
 Since spellwand runs in-process, it is possible to use runtime Lua functions for `cond` and `preprocess` — no JSON serialization involved.
 
-The `treesitter` strategy only checks nodes captured as `@spell` (typically comments and string literals), defined in query files like `queries/lua/highlights.scm`. Use the `full` strategy to check all buffer text. You may also want to configure `:spelloptions` (e.g., `noplainbuffer`, automatically set by Neovim when Treesitter is active) to keep spell highlighting consistent across strategies.
+The `treesitter` strategy only checks `@spell` nodes (typically comments and string literals), defined in query files like `queries/lua/highlights.scm`. Use the `full` strategy to check all buffer text.
 
 ### Debounce
 
@@ -177,7 +177,7 @@ There are two independent debounce layers you can tune:
 - Controls how long spellwand waits after receiving a change before re-computing diagnostics.
 - Default is `300` milliseconds.
 - **Normal mode**: `textDocument/didChange` triggers the debounce timer; diagnostics are refreshed after you stop typing for `300` ms.
-- **Insert/Replace mode**: `didChange` is completely ignored to avoid blocking the UI. Old diagnostics are hidden immediately on `InsertEnter` (by pushing an empty list), and refreshed immediately on `InsertLeave`.
+- **Insert/Replace mode**: `didChange` is completely ignored to avoid blocking the UI. Old diagnostics are hidden immediately on `InsertEnter` (by pushing an empty list), and refreshed immediately on `InsertLeave`. Because of this, `vim.diagnostic.config({ update_in_insert = true })` has no effect on spellwand diagnostics.
 
 ```lua
 vim.lsp.config("spellwand", {
@@ -339,7 +339,7 @@ As an in-process LSP server, spellwand has different trade-offs compared to exte
 - Spell checking runs synchronously on Neovim's main thread. Large buffers or files with thousands of spelling errors may cause temporary TUI lag. We carefully designed the insert-mode pending strategy and normal-mode debounce mechanism to mitigate this; you can further tune performance with the `max_errors`, `debounce_ms`, and `cond` options.
 - The server must implement the `vim.lsp.rpc.PublicClient` interface correctly and explicitly trigger `on_exit`, because Neovim's `vim.system` callback mechanism (used for external LSP servers to detect process exit) does not apply to in-process servers. Autocmds and timers are additional performance optimizations that also need careful cleanup.
 
-**Why is native Vim spell checking fast while spellwand can lag?**
+**Why is native Vim spell checking fast while spellwand may lag in large buffers?**
 
 Native Vim only spell-checks the *visible* window range during screen rendering. spellwand, as an LSP server, must scan the *entire buffer* to produce a complete diagnostic list, which is inherently heavier work.
 
