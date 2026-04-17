@@ -51,7 +51,7 @@ Uses Neovim's built-in spell checking, so results are always consistent with nat
 }
 ```
 
-### [vim.pack](https://neovim.io/doc/user/pack.html) (Neovim 0.12+)
+### [vim.pack](https://neovim.io/doc/user/pack/) (Neovim 0.12+)
 
 ```lua
 vim.pack.add({
@@ -352,7 +352,7 @@ If you need more advanced features or asynchronous processing, consider these de
 - [typos-lsp](https://github.com/tekumara/typos-lsp) - Source code spell checker based on typos
 - [harper-ls](https://github.com/elijah-potter/harper) - The Grammar Checker for Developers
 - [codebook](https://github.com/blopker/codebook) - A fast, semantic, cross-platform spell checker
-- [cspell-lsp](https://github.com/davidmh/cspell.nvim) - cspell integration for Neovim
+- [cspell-lsp](https://github.com/vlabo/cspell-lsp) - the LSP wrapper for cspell
 
 ## Acknowledgments
 
