@@ -358,4 +358,4 @@ If you need more advanced features or asynchronous processing, consider these de
 
 - [spellwarn.nvim](https://github.com/ravibrock/spellwarn.nvim): Inspired the spell checking approach
 - [spellsitter.nvim](https://github.com/lewis6991/spellsitter.nvim): Precursor to Neovim's built-in Treesitter spell checking (merged in 0.8)
-- [in-process-lsp-guide](https://github.com/neo451/in-process-lsp-guide): A guide for implementing the in-process LSP pattern
+- [in-process-lsp-guide](https://neo451.github.io/blog/posts/in-process-lsp-guide/): A guide for implementing the in-process LSP pattern
