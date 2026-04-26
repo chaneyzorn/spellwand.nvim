@@ -321,8 +321,8 @@ function Server:_server_get_diagnostics(bufnr)
 
       table.insert(diagnostics, {
         range = {
-          start = { line = err.lnum - 1, character = err.col - 1 },
-          ["end"] = { line = err.lnum - 1, character = err.col - 1 + #err.word },
+          start = { line = err.lnum - 1, character = err.utf16_col },
+          ["end"] = { line = err.lnum - 1, character = err.utf16_col + err.utf16_len },
         },
         message = message,
         severity = severity,
@@ -366,7 +366,6 @@ function Server:_server_publish_diagnostics(bufnr, diagnostics)
     diagnostics = diagnostics or self:_server_get_diagnostics(bufnr)
     local uri = vim.uri_from_bufnr(bufnr)
 
-    ---@diagnostic disable-next-line: param-type-mismatch
     self._dispatchers.notification(ms.textDocument_publishDiagnostics, {
       uri = uri,
       diagnostics = diagnostics,

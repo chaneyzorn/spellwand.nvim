@@ -18,7 +18,9 @@
 ---@class spellwand.SpellingError
 ---@field word string The misspelled word
 ---@field lnum integer 1-indexed line number
----@field col integer 1-indexed column number
+---@field col integer 1-indexed byte column number
+---@field utf16_col integer 0-indexed UTF-16 code unit column number
+---@field utf16_len integer UTF-16 code unit length of the word
 ---@field type string Error type: "SpellBad", "SpellCap", "SpellLocal", "SpellRare"
 
 ---Diagnostic message format templates

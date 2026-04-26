@@ -1,0 +1,18 @@
+This is a sampel text with nerdfont icons mixed in.
+
+Single icons that may trigger diagnostics:
+ check    cross    warning    info    gear
+
+Filetype icons:        
+Folder icons:     
+Arrow icons:    
+
+Words with typos near icons:
+ calcualte  recieve  occured  seperate
+
+More mispelled words for testing:
+- accomodate
+- definately
+- occurence
+- recieve
+- untill

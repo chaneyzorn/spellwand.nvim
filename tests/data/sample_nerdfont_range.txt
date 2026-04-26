@@ -1,0 +1,11 @@
+# Range test: nerdfont (3-byte UTF-8) + typo on same line
+# Before UTF-16 fix, diagnostics highlight would extend past the word.
+
+αβγ helllo world
+ calcualte the sum
+ recieve a messaeg
+ occured an error
+ seperate the items
+ definately here
+ accomodate all guests
+ untill tomorrow

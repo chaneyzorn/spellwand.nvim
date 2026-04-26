@@ -47,6 +47,7 @@ local function _get_spelling_errors_treesitter(bufnr, opts)
   local spell_errors = {}
   local seen = {}
   local max_errors = opts.max_errors
+  local line_texts = {}
 
   -- Helper to process a single spell error and check max_errors limit
   local function add_spell_error(start_row, start_col, err)
@@ -62,11 +63,22 @@ local function _get_spelling_errors_treesitter(bufnr, opts)
       return false
     end
 
+    -- vim.spell.check returns byte offsets; compute UTF-16 equivalents for LSP
+    local line_text = line_texts[start_row]
+    if not line_text then
+      line_text = vim.api.nvim_buf_get_lines(bufnr, start_row, start_row + 1, false)[1] or ""
+      line_texts[start_row] = line_text
+    end
+    local utf16_col = (vim.str_utfindex(line_text, "utf-16", abs_col) or abs_col) - 1
+    local utf16_len = vim.str_utfindex(word, "utf-16") or #word
+
     seen[key] = true
     table.insert(spell_errors, {
       word = word,
       lnum = abs_lnum,
       col = abs_col,
+      utf16_col = utf16_col,
+      utf16_len = utf16_len,
       type = ERROR_TYPES[err_code] or ("Spell" .. err_code:gsub("^%l", string.upper)),
     })
 
@@ -104,58 +116,38 @@ end
 ---Get spelling errors by iterating through buffer content (full buffer scan, internal implementation)
 ---@param bufnr integer
 ---@param opts spellwand.LspConfig
----@param start_row integer|nil 0-indexed
----@param start_col integer|nil 0-indexed
----@param end_row integer|nil 0-indexed
----@param end_col integer|nil 0-indexed
 ---@return spellwand.SpellingError[]
-local function _get_spelling_errors_full(bufnr, opts, start_row, start_col, end_row, end_col)
-  start_row = start_row or 0
-  start_col = start_col or 0
-
-  if end_row == nil then
-    end_row = vim.api.nvim_buf_line_count(bufnr) - 1
-  end
-  if end_col == nil then
-    local last_line = vim.api.nvim_buf_get_lines(bufnr, end_row, end_row + 1, false)[1] or ""
-    end_col = #last_line
-  end
-
-  local lines = vim.api.nvim_buf_get_lines(bufnr, start_row, end_row + 1, false)
+local function _get_spelling_errors_full(bufnr, opts)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   if #lines == 0 then
     return {}
   end
-
-  -- Trim last line to end_col
-  lines[#lines] = string.sub(lines[#lines], 1, end_col)
-  -- Trim first line from start_col
-  lines[1] = string.sub(lines[1], start_col + 1)
 
   local spell_errors = {}
   local seen = {}
   local max_errors = opts.max_errors
 
-  for n, line in ipairs(lines) do
+  for lnum, line in ipairs(lines) do
     for _, err in ipairs(vim.spell.check(line)) do
       local word = err[1]
       local err_code = err[2]
       local col = err[3]
 
-      -- Calculate absolute position
-      local abs_lnum = start_row + n
-      local abs_col = (n == 1 and start_col or 0) + col
-      local key = abs_lnum .. ":" .. abs_col .. ":" .. word
-
+      local key = lnum .. ":" .. col .. ":" .. word
       if not seen[key] then
+        local utf16_col = (vim.str_utfindex(line, "utf-16", col) or col) - 1
+        local utf16_len = vim.str_utfindex(word, "utf-16") or #word
+
         seen[key] = true
         table.insert(spell_errors, {
           word = word,
-          lnum = abs_lnum,
-          col = abs_col,
+          lnum = lnum,
+          col = col,
+          utf16_col = utf16_col,
+          utf16_len = utf16_len,
           type = ERROR_TYPES[err_code] or ("Spell" .. err_code:gsub("^%l", string.upper)),
         })
 
-        -- Early return if max_errors reached
         if #spell_errors >= max_errors then
           return spell_errors
         end
